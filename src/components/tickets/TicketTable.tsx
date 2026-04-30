@@ -10,7 +10,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Ticket, Priority, Status } from "../../types/freshdesk";
 import { cn } from "@/lib/utils";
-import { MoreHorizontal, Search, Filter, Columns, Plus } from "lucide-react";
+import { MoreHorizontal, Search, Filter, Columns, Plus, Clock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
