@@ -1,90 +1,113 @@
-import React, { useState } from 'react';
-import Header from '@/components/layout/Header';
-import KPIStrip from '@/components/dashboard/KPIStrip';
-import ServiceStatusBar from '@/components/dashboard/ServiceStatusBar';
-import TicketTable from '@/components/dashboard/TicketTable';
-import TicketDrawer from '@/components/dashboard/TicketDrawer';
-import { Ticket } from '@/types/freshdesk';
+import React, { useState, useEffect } from "react";
+import { Header } from "../components/layout/Header";
+import { KPIStrip } from "../components/dashboard/KPIStrip";
+import { ServiceStatusBar } from "../components/dashboard/ServiceStatusBar";
+import { TicketTable } from "../components/tickets/TicketTable";
+import { TicketDrawer } from "../components/tickets/TicketDrawer";
+import { OverviewCharts } from "../components/analytics/OverviewCharts";
+import { fetchTickets, fetchConversations } from "../services/freshdesk";
+import { Ticket, Conversation } from "../types/freshdesk";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from '@/components/ui/button';
-import { Download, Filter, RefreshCw } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { RefreshCw, Filter, Download } from "lucide-react";
+import { showSuccess } from "../utils/toast";
 
 const Index = () => {
+  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleRowClick = (ticket: Ticket) => {
+  const loadData = async () => {
+    setIsLoading(true);
+    const data = await fetchTickets();
+    setTickets(data);
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    loadData();
+    // Auto-refresh every 60 seconds
+    const interval = setInterval(loadData, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleRowClick = async (ticket: Ticket) => {
     setSelectedTicket(ticket);
+    const convs = await fetchConversations(ticket.id);
+    setConversations(convs);
     setIsDrawerOpen(true);
   };
 
+  const handleRefresh = () => {
+    loadData();
+    showSuccess("Dashboard updated with latest NSE tickets");
+  };
+
   return (
-    <div className="min-h-screen bg-[#F8F9FC] text-foreground selection:bg-primary/10">
+    <div className="min-h-screen bg-[#f8fafc]">
       <Header />
       
-      <main className="container px-8 py-8 space-y-8">
-        {/* Page Title & Actions */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <main className="container px-6 py-8 space-y-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">NSE Command Center</h1>
-            <p className="text-muted-foreground mt-1">Monitoring National Stock Exchange of India support operations.</p>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Command Center</h1>
+            <p className="text-muted-foreground mt-1">Monitoring National Stock Exchange (NSE) Support Operations</p>
           </div>
-          <div className="flex items-center gap-3">
-            <Button variant="outline" className="rounded-full gap-2 bg-white shadow-sm">
-              <RefreshCw size={16} />
-              Sync Freshdesk
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading}>
+              <RefreshCw className={cn("h-4 w-4 mr-2", isLoading && "animate-spin")} />
+              Refresh
             </Button>
-            <Button variant="outline" className="rounded-full gap-2 bg-white shadow-sm">
-              <Download size={16} />
+            <Button variant="outline" size="sm">
+              <Filter className="h-4 w-4 mr-2" />
+              Filters
+            </Button>
+            <Button size="sm" className="bg-primary shadow-lg shadow-primary/20">
+              <Download className="h-4 w-4 mr-2" />
               Export Report
             </Button>
-            <Button className="rounded-full gap-2 shadow-lg shadow-primary/20">
-              New Ticket
-            </Button>
           </div>
         </div>
 
-        {/* KPI Section */}
         <KPIStrip />
 
-        {/* Service Status Section */}
-        <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+        <div className="grid grid-cols-1 gap-8">
           <ServiceStatusBar />
-        </div>
-
-        {/* Live Tickets Section */}
-        <div className="space-y-4">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <Tabs defaultValue="all" className="w-full md:w-auto">
-              <TabsList className="bg-white border p-1 rounded-full h-11">
-                <TabsTrigger value="all" className="rounded-full px-6">All Tickets</TabsTrigger>
-                <TabsTrigger value="on-track" className="rounded-full px-6">On Track</TabsTrigger>
-                <TabsTrigger value="attention" className="rounded-full px-6">Attention</TabsTrigger>
-                <TabsTrigger value="immediate" className="rounded-full px-6">Immediate</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" className="rounded-full gap-2 text-muted-foreground">
-                <Filter size={14} />
-                Filters
-              </Button>
-              <div className="h-4 w-[1px] bg-slate-200 mx-2"></div>
-              <span className="text-xs font-medium text-muted-foreground">Showing 4 of 128 tickets</span>
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Tabs defaultValue="all" className="w-auto">
+                <TabsList className="bg-secondary/50 p-1">
+                  <TabsTrigger value="all" className="text-xs px-4">All Tickets</TabsTrigger>
+                  <TabsTrigger value="on-track" className="text-xs px-4">On Track</TabsTrigger>
+                  <TabsTrigger value="attention" className="text-xs px-4">Attention</TabsTrigger>
+                  <TabsTrigger value="immediate" className="text-xs px-4">Immediate</TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <span className="text-xs font-medium text-muted-foreground">
+                Showing {tickets.length} active tickets for NSE
+              </span>
             </div>
+            
+            <TicketTable tickets={tickets} onRowClick={handleRowClick} />
           </div>
 
-          <TicketTable onRowClick={handleRowClick} />
+          <OverviewCharts />
         </div>
       </main>
 
       <TicketDrawer 
-        ticket={selectedTicket} 
-        isOpen={isDrawerOpen} 
-        onClose={() => setIsDrawerOpen(false)} 
+        ticket={selectedTicket}
+        conversations={conversations}
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
       />
     </div>
   );
 };
 
 export default Index;
+
+import { cn } from "@/lib/utils";

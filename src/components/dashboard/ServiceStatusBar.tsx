@@ -1,42 +1,48 @@
-import React from 'react';
-import { cn } from '@/lib/utils';
+import React from "react";
+import { cn } from "@/lib/utils";
 
-const ServiceStatusBar = () => {
-  const segments = [
-    { label: 'On Track', count: 18, color: 'bg-emerald-500', width: '60%' },
-    { label: 'Attention Needed', count: 5, color: 'bg-amber-500', width: '25%' },
-    { label: 'Immediate Action', count: 2, color: 'bg-rose-500', width: '15%' },
+interface SegmentProps {
+  label: string;
+  count: number;
+  percentage: number;
+  color: string;
+  onClick?: () => void;
+}
+
+const Segment = ({ label, count, percentage, color, onClick }: SegmentProps) => (
+  <button
+    onClick={onClick}
+    className={cn(
+      "h-full flex flex-col justify-center px-4 transition-all hover:brightness-95 first:rounded-l-xl last:rounded-r-xl",
+      color
+    )}
+    style={{ width: `${percentage}%` }}
+  >
+    <span className="text-xs font-semibold text-white/80 uppercase tracking-wider truncate">
+      {label}
+    </span>
+    <span className="text-lg font-bold text-white">{count}</span>
+  </button>
+);
+
+export const ServiceStatusBar = () => {
+  const data = [
+    { label: "On Track", count: 42, percentage: 65, color: "bg-emerald-500" },
+    { label: "Attention Needed", count: 12, percentage: 20, color: "bg-amber-500" },
+    { label: "Immediate Action", count: 8, percentage: 15, color: "bg-rose-500" },
   ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-end">
-        <div>
-          <h2 className="text-lg font-semibold">Service Status</h2>
-          <p className="text-sm text-muted-foreground">Real-time SLA distribution for NSE</p>
-        </div>
-        <div className="flex gap-4">
-          {segments.map((s) => (
-            <div key={s.label} className="flex items-center gap-2">
-              <div className={cn("h-2 w-2 rounded-full", s.color)}></div>
-              <span className="text-xs font-medium">{s.label}: {s.count}</span>
-            </div>
-          ))}
-        </div>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-muted-foreground">Service Status Overview</h3>
+        <span className="text-xs text-muted-foreground">Last updated: Just now</span>
       </div>
-      
-      <div className="h-3 w-full bg-muted rounded-full overflow-hidden flex">
-        {segments.map((s) => (
-          <div 
-            key={s.label} 
-            className={cn("h-full transition-all hover:opacity-80 cursor-pointer", s.color)} 
-            style={{ width: s.width }}
-            title={`${s.label}: ${s.count} tickets`}
-          ></div>
+      <div className="h-16 w-full flex shadow-lg shadow-primary/5">
+        {data.map((segment) => (
+          <Segment key={segment.label} {...segment} />
         ))}
       </div>
     </div>
   );
 };
-
-export default ServiceStatusBar;
