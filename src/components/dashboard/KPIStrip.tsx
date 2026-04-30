@@ -1,67 +1,106 @@
 import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Activity, CheckCircle2, Clock, Zap, AlertCircle } from "lucide-react";
+import { Activity, CheckCircle2, Clock, Zap, AlertCircle, TrendingUp, TrendingDown } from "lucide-react";
+import { LineChart, Line, ResponsiveContainer } from "recharts";
+import { cn } from "@/lib/utils";
+
+const sparklineData = [
+  { value: 40 }, { value: 30 }, { value: 45 }, { value: 35 }, { value: 55 }, { value: 48 }, { value: 60 }
+];
 
 const kpis = [
   {
-    label: "Service Health",
-    value: "98.2%",
-    description: "Tickets resolved in SLA",
+    label: "Service Health Score",
+    value: "92%",
+    trend: "+ 3%",
+    trendDir: "up",
     icon: Activity,
     color: "text-emerald-500",
     bg: "bg-emerald-500/10",
+    chartColor: "#10b981"
   },
   {
-    label: "Closed Today",
-    value: "24",
-    description: "+4 from yesterday",
-    icon: CheckCircle2,
+    label: "Tickets Created",
+    value: "1,248",
+    trend: "+ 14%",
+    trendDir: "up",
+    icon: Zap,
     color: "text-blue-500",
     bg: "bg-blue-500/10",
+    chartColor: "#3b82f6"
   },
   {
-    label: "Avg First Response",
-    value: "12m",
-    description: "Target: < 30m",
-    icon: Zap,
-    color: "text-amber-500",
-    bg: "bg-amber-500/10",
+    label: "Tickets Resolved",
+    value: "1,156",
+    trend: "+ 18%",
+    trendDir: "up",
+    icon: CheckCircle2,
+    color: "text-emerald-500",
+    bg: "bg-emerald-500/10",
+    chartColor: "#10b981"
   },
   {
-    label: "Avg Resolution",
-    value: "4.2h",
-    description: "Target: < 8h",
+    label: "Avg. Response Time",
+    value: "18m",
+    trend: "5m",
+    trendDir: "down",
     icon: Clock,
     color: "text-purple-500",
     bg: "bg-purple-500/10",
+    chartColor: "#a855f7"
   },
   {
-    label: "Critical Tickets",
-    value: "3",
-    description: "Immediate action",
+    label: "Avg. Resolution Tickets",
+    value: "4h 32m",
+    trend: "18m",
+    trendDir: "down",
     icon: AlertCircle,
-    color: "text-rose-500",
-    bg: "bg-rose-500/10",
+    color: "text-orange-500",
+    bg: "bg-orange-500/10",
+    chartColor: "#f97316"
   },
 ];
 
 export const KPIStrip = () => {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
       {kpis.map((kpi) => (
-        <Card key={kpi.label} className="border-none shadow-sm bg-card/50 backdrop-blur-sm">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
+        <Card key={kpi.label} className="border-none shadow-sm bg-white overflow-hidden">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3 mb-4">
               <div className={cn("p-2 rounded-lg", kpi.bg)}>
-                <kpi.icon className={cn("h-4 w-4", kpi.color)} />
+                <kpi.icon className={cn("h-5 w-5", kpi.color)} />
               </div>
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <span className="text-sm font-medium text-slate-500">
                 {kpi.label}
               </span>
             </div>
-            <div className="flex flex-col">
-              <span className="text-2xl font-bold tracking-tight">{kpi.value}</span>
-              <span className="text-xs text-muted-foreground mt-1">{kpi.description}</span>
+            
+            <div className="flex items-end justify-between">
+              <div>
+                <div className="text-2xl font-bold text-slate-900">{kpi.value}</div>
+                <div className={cn(
+                  "flex items-center gap-1 text-xs font-medium mt-1",
+                  kpi.trendDir === 'up' ? "text-emerald-600" : "text-rose-600"
+                )}>
+                  {kpi.trendDir === 'up' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                  {kpi.trend} <span className="text-slate-400 font-normal ml-1">from last 7 days</span>
+                </div>
+              </div>
+              
+              <div className="h-12 w-20">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={sparklineData}>
+                    <Line 
+                      type="monotone" 
+                      dataKey="value" 
+                      stroke={kpi.chartColor} 
+                      strokeWidth={2} 
+                      dot={false} 
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -69,5 +108,3 @@ export const KPIStrip = () => {
     </div>
   );
 };
-
-import { cn } from "@/lib/utils";
