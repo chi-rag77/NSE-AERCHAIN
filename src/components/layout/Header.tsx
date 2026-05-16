@@ -1,11 +1,9 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Search, Bell, User, LayoutDashboard, Ticket, Clock, AlertTriangle, BarChart3, Settings, Sun, Moon } from "lucide-react";
-import { useTheme } from "next-themes";
+import { Search, Bell, User, LayoutDashboard, Ticket, Clock, AlertTriangle, BarChart3, Settings } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { isUsingRealAPI } from "@/services/freshdesk";
 
 const navItems = [
   { label: "Dashboard", path: "/", icon: LayoutDashboard },
@@ -18,7 +16,6 @@ const navItems = [
 
 export const Header = () => {
   const location = useLocation();
-  const { theme, setTheme } = useTheme();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -28,12 +25,7 @@ export const Header = () => {
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
               <span className="text-primary-foreground font-bold text-xl">A</span>
             </div>
-            <div className="hidden md:flex flex-col">
-              <span className="font-bold text-lg tracking-tight leading-none">Aerchain Support</span>
-              {isUsingRealAPI() && (
-                <span className="text-[10px] text-emerald-500 font-semibold">● Live API</span>
-              )}
-            </div>
+            <span className="font-bold text-lg tracking-tight hidden md:block">Aerchain Support</span>
           </Link>
 
           <nav className="hidden lg:flex items-center gap-1">
@@ -64,22 +56,12 @@ export const Header = () => {
               className="pl-9 bg-secondary/50 border-none focus-visible:ring-1"
             />
           </div>
-
+          
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              title="Toggle dark mode"
-            >
-              {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </Button>
-
             <Button variant="ghost" size="icon" className="relative">
               <Bell className="h-5 w-5" />
               <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-destructive border-2 border-background" />
             </Button>
-
             <Button variant="ghost" size="icon" className="rounded-full">
               <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center border">
                 <User className="h-4 w-4 text-primary" />

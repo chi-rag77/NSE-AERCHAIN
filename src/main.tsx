@@ -1,10 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { ThemeProvider } from "next-themes";
 import App from "./App.tsx";
 import "./globals.css";
 
-createRoot(document.getElementById("root")!).render(
-  <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
-    <App />
-  </ThemeProvider>
-);
+createRoot(document.getElementById("root")!).render(<App />);

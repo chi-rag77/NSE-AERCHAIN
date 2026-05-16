@@ -1,93 +1,103 @@
 import { Ticket, Conversation } from "../types/freshdesk";
-import { MOCK_TICKETS, MOCK_CONVERSATIONS } from "./mockData";
 
-const API_KEY = import.meta.env.VITE_FRESHDESK_API_KEY as string | undefined;
-const DOMAIN = import.meta.env.VITE_FRESHDESK_DOMAIN as string | undefined;
-const USE_REAL_API = !!(API_KEY && DOMAIN && API_KEY !== "your_api_key_here");
-
-const authHeaders = () => ({
-  Authorization: `Basic ${btoa(`${API_KEY}:X`)}`,
-  "Content-Type": "application/json",
-});
-
-export const isUsingRealAPI = () => USE_REAL_API;
+// Mock data for NSE tickets
+const MOCK_TICKETS: Ticket[] = [
+  {
+    id: 10245,
+    subject: "Connectivity issue with NSE primary gateway",
+    description: "We are seeing intermittent drops in the primary gateway connection.",
+    priority: 4,
+    status: 2,
+    created_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(), // 45 mins ago
+    updated_at: new Date().toISOString(),
+    requester_id: 1,
+    company_id: 101,
+    company_name: "NSE",
+    requester_name: "Rajesh Kumar",
+    responder_id: 501,
+    responder_name: "Amit Shah",
+    tags: ["Infrastructure", "Critical"],
+  },
+  {
+    id: 10246,
+    subject: "Delayed trade confirmation reports",
+    description: "Reports for the morning session are delayed by 15 minutes.",
+    priority: 3,
+    status: 3,
+    created_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(), // 2 hours ago
+    updated_at: new Date().toISOString(),
+    requester_id: 2,
+    company_id: 101,
+    company_name: "NSE",
+    requester_name: "Sanjay Gupta",
+    responder_id: null,
+    tags: ["Reporting"],
+  },
+  {
+    id: 10247,
+    subject: "User access request for new terminal",
+    description: "Requesting access for 5 new users in the clearing department.",
+    priority: 2,
+    status: 2,
+    created_at: new Date(Date.now() - 1000 * 60 * 300).toISOString(), // 5 hours ago
+    updated_at: new Date().toISOString(),
+    requester_id: 3,
+    company_id: 101,
+    company_name: "NSE",
+    requester_name: "Priya Sharma",
+    responder_id: 502,
+    responder_name: "Sarah Chen",
+    tags: ["Access"],
+  },
+  {
+    id: 10248,
+    subject: "API documentation clarification",
+    description: "Need details on the new websocket endpoint parameters.",
+    priority: 1,
+    status: 6,
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), // 1 day ago
+    updated_at: new Date().toISOString(),
+    requester_id: 4,
+    company_id: 101,
+    company_name: "NSE",
+    requester_name: "Vikram Singh",
+    responder_id: 501,
+    responder_name: "Amit Shah",
+    tags: ["API"],
+  }
+];
 
 export const fetchTickets = async (): Promise<Ticket[]> => {
-  if (!USE_REAL_API) {
-    return new Promise((resolve) => setTimeout(() => resolve(MOCK_TICKETS), 600));
-  }
-
-  const res = await fetch(
-    `https://${DOMAIN}/api/v2/tickets?include=requester,company,stats&per_page=100&order_type=desc`,
-    { headers: authHeaders() }
-  );
-
-  if (!res.ok) {
-    console.error("Freshdesk API error:", res.status, await res.text());
-    throw new Error(`Freshdesk API returned ${res.status}`);
-  }
-
-  const data = await res.json();
-
-  // Normalise Freshdesk response to our Ticket shape
-  return (data as any[]).map((t) => ({
-    id: t.id,
-    subject: t.subject,
-    description: t.description_text ?? t.description ?? "",
-    priority: t.priority,
-    status: t.status,
-    created_at: t.created_at,
-    updated_at: t.updated_at,
-    requester_id: t.requester_id,
-    company_id: t.company_id ?? 0,
-    responder_id: t.responder_id ?? null,
-    tags: t.tags ?? [],
-    company_name: t.company?.name,
-    requester_name: t.requester
-      ? `${t.requester.name ?? t.requester.email}`
-      : undefined,
-    responder_name: undefined,
-    sla_policy_id: t.sla_policy_id,
-  }));
+  // In a real app, this would call the Freshdesk API
+  // For now, we return mock data filtered by NSE
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(MOCK_TICKETS), 800);
+  });
 };
 
 export const fetchConversations = async (ticketId: number): Promise<Conversation[]> => {
-  if (!USE_REAL_API) {
-    const convs = MOCK_CONVERSATIONS[ticketId] ?? [];
-    return new Promise((resolve) =>
-      setTimeout(
-        () =>
-          resolve(
-            convs.map((c) => ({
-              ...c,
-              body_text: c.body,
-              private: false,
-              updated_at: c.created_at,
-              attachments: [],
-            }))
-          ),
-        300
-      )
-    );
-  }
-
-  const res = await fetch(
-    `https://${DOMAIN}/api/v2/tickets/${ticketId}/conversations`,
-    { headers: authHeaders() }
-  );
-
-  if (!res.ok) throw new Error(`Failed to fetch conversations for ticket ${ticketId}`);
-
-  const data = await res.json();
-  return (data as any[]).map((c) => ({
-    id: c.id,
-    body: c.body ?? "",
-    body_text: c.body_text ?? c.body ?? "",
-    incoming: c.incoming,
-    private: c.private ?? false,
-    user_id: c.user_id,
-    created_at: c.created_at,
-    updated_at: c.updated_at,
-    attachments: c.attachments ?? [],
-  }));
+  return [
+    {
+      id: 1,
+      body: "Hello, we are looking into the connectivity issue. Our team is checking the logs.",
+      body_text: "Hello, we are looking into the connectivity issue. Our team is checking the logs.",
+      incoming: false,
+      private: false,
+      user_id: 501,
+      created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+      updated_at: new Date().toISOString(),
+      attachments: [],
+    },
+    {
+      id: 2,
+      body: "Thank you. Please update as soon as possible as this is affecting live trading.",
+      body_text: "Thank you. Please update as soon as possible as this is affecting live trading.",
+      incoming: true,
+      private: false,
+      user_id: 1,
+      created_at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+      updated_at: new Date().toISOString(),
+      attachments: [],
+    }
+  ];
 };
