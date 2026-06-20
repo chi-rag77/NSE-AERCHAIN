@@ -14,6 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Clock, User, Send, Paperclip, History } from "lucide-react";
 import { format } from "date-fns";
+import { requesterDisplayName, ticketDept } from "@/lib/tickets";
 
 interface TicketDrawerProps {
   ticket: Ticket | null;
@@ -37,7 +38,7 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
           <div className="flex items-center gap-4 mt-4">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <User className="h-3.5 w-3.5" />
-              {ticket.requester_name}
+              {requesterDisplayName(ticket)} · {ticketDept(ticket)}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Clock className="h-3.5 w-3.5" />

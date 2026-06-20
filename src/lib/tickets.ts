@@ -77,21 +77,25 @@ export const computeSLA = (t: Ticket): SLAInfo => {
 };
 
 /* ----------------------------------------------------------------------------
- * Deterministic enrichment (stable per ticket id — no random flicker)
+ * Department / category derived from real Freshdesk data
+ * requester_name often contains the dept in parens: "John Smith (NSE-F&A-SYS)"
  * ------------------------------------------------------------------------- */
 
-const DEPARTMENTS = ["Performance", "Access", "Reports", "API", "Procurement", "Compliance", "Trading"];
-const CATEGORIES = ["OMS", "Onboarding", "Compliance", "Webhook", "Data", "Workflow", "Integration"];
-
-const hash = (n: number) => {
-  let x = (n ^ 0x9e3779b9) >>> 0;
-  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
-  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
-  return (x ^ (x >>> 16)) >>> 0;
+const extractDept = (name: string | null): string | null => {
+  if (!name) return null;
+  const match = name.match(/\(([^)]+)\)$/);
+  return match ? match[1] : null;
 };
 
-export const ticketDept = (t: Ticket) => `NSE — ${t.tags[0] ?? DEPARTMENTS[hash(t.id) % DEPARTMENTS.length]}`;
-export const ticketCategory = (t: Ticket) => t.tags[1] ?? CATEGORIES[hash(t.id * 7) % CATEGORIES.length];
+export const ticketDept = (t: Ticket): string => {
+  const dept = extractDept(t.requester_name);
+  return dept ? `NSE — ${dept}` : "NSE";
+};
+
+export const ticketCategory = (t: Ticket): string => t.tags[0] ?? "";
+
+export const requesterDisplayName = (t: Ticket): string =>
+  t.requester_name ? t.requester_name.replace(/\s*\([^)]*\)$/, "").trim() : "Unknown";
 
 /* ----------------------------------------------------------------------------
  * Aggregate metrics for the dashboard
