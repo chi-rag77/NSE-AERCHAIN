@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchTickets } from "@/services/freshdesk";
+import { fetchTickets, triggerSync } from "@/services/freshdesk";
+import { isSupabaseConfigured } from "@/services/supabase";
 import { Ticket } from "@/types/freshdesk";
-import { showSuccess } from "@/utils/toast";
+import { showSuccess, showError } from "@/utils/toast";
 
 interface UseTicketsResult {
   tickets: Ticket[];
@@ -20,14 +21,22 @@ export const useTickets = (autoRefreshMs = 60000): UseTicketsResult => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const load = useCallback(async (silent: boolean) => {
-    if (silent) setIsRefreshing(true);
-    else setIsLoading(true);
+  // initialLoad: just read from Supabase. manualRefresh: trigger a fresh
+  // Freshdesk → Supabase sync first, then read.
+  const load = useCallback(async (mode: "initial" | "auto" | "manual") => {
+    if (mode === "initial") setIsLoading(true);
+    else setIsRefreshing(true);
     try {
+      if (mode === "manual" && isSupabaseConfigured) {
+        const res = await triggerSync();
+        if (!res.ok) showError(res.error ?? "Sync failed");
+      }
       const data = await fetchTickets();
       setTickets(data);
       setLastUpdated(new Date());
-      if (silent) showSuccess("Tickets refreshed");
+      if (mode === "manual") showSuccess("Tickets refreshed");
+    } catch (e) {
+      showError(e instanceof Error ? e.message : "Failed to load tickets");
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -35,11 +44,11 @@ export const useTickets = (autoRefreshMs = 60000): UseTicketsResult => {
   }, []);
 
   useEffect(() => {
-    load(false);
+    load("initial");
     if (!autoRefreshMs) return;
-    const id = setInterval(() => load(true), autoRefreshMs);
+    const id = setInterval(() => load("auto"), autoRefreshMs);
     return () => clearInterval(id);
   }, [load, autoRefreshMs]);
 
-  return { tickets, isLoading, isRefreshing, lastUpdated, refresh: () => load(true) };
+  return { tickets, isLoading, isRefreshing, lastUpdated, refresh: () => load("manual") };
 };

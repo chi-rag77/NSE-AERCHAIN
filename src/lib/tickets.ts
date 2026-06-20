@@ -6,28 +6,61 @@ import { differenceInMinutes, parseISO, addHours } from "date-fns";
  * ------------------------------------------------------------------------- */
 
 export const PRIORITY_META: Record<Priority, { label: string; tone: string; dot: string }> = {
-  1: { label: "Low", tone: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20", dot: "bg-emerald-500" },
-  2: { label: "Medium", tone: "bg-sky-50 text-sky-700 ring-1 ring-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20", dot: "bg-sky-500" },
-  3: { label: "High", tone: "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20", dot: "bg-amber-500" },
-  4: { label: "Critical", tone: "bg-rose-50 text-rose-700 ring-1 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20", dot: "bg-rose-500" },
+  1: { label: "Low", tone: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300", dot: "bg-emerald-500" },
+  2: { label: "Medium", tone: "bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300", dot: "bg-sky-500" },
+  3: { label: "High", tone: "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300", dot: "bg-amber-500" },
+  4: { label: "Critical", tone: "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300", dot: "bg-rose-500" },
 };
 
 export const STATUS_META: Record<number, { label: string; tone: string }> = {
-  2: { label: "Open", tone: "bg-blue-50 text-blue-700 ring-1 ring-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:ring-blue-500/20" },
-  3: { label: "In Progress", tone: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-500/20" },
-  4: { label: "Resolved", tone: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20" },
-  5: { label: "Closed", tone: "bg-slate-100 text-slate-600 ring-1 ring-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:ring-slate-500/20" },
-  6: { label: "Waiting", tone: "bg-violet-50 text-violet-700 ring-1 ring-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/20" },
+  2: { label: "Open", tone: "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300" },
+  3: { label: "Pending", tone: "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300" },
+  4: { label: "Resolved", tone: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300" },
+  5: { label: "Closed", tone: "bg-slate-100 text-slate-500 dark:bg-slate-500/10 dark:text-slate-300" },
+  6: { label: "Waiting", tone: "bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-300" },
+  7: { label: "In Progress", tone: "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300" },
+  8: { label: "On Hold", tone: "bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-300" },
 };
 
 export const priorityLabel = (p: number) => PRIORITY_META[p as Priority]?.label ?? String(p);
 export const statusLabel = (s: number) => STATUS_META[s]?.label ?? "Unknown";
 
 /* ----------------------------------------------------------------------------
- * SLA
+ * SLA — Aerchain SLA document (Section 6)
+ *
+ * Severity 1 (Critical / P4) — Full resolution: 8 business hours
+ * Severity 2 (High    / P3) — Full resolution: 32 business hours
+ * Severity 3 (Medium  / P2) — Full resolution: 64 business hours
+ * Severity 3 (Low     / P1) — Full resolution: 15 business days (120 biz hrs)
+ *
+ * All levels: Acknowledgment within 15 min, Analysis within 60 min.
+ * Business hours = 9 h/day (09:00–18:00). Values below are calendar hours
+ * approximated from business hours (÷ 9 h × 24 h).
  * ------------------------------------------------------------------------- */
 
-const SLA_RESOLUTION_HOURS: Record<Priority, number> = { 4: 4, 3: 24, 2: 48, 1: 72 };
+// Calendar-hour equivalents of the business-hour SLA targets
+const BIZ_TO_CAL = (bizHours: number) => Math.round((bizHours / 9) * 24);
+
+const SLA_RESOLUTION_HOURS: Record<Priority, number> = {
+  4: BIZ_TO_CAL(8),    // Severity 1 — Critical: 8 biz hrs ≈ 21 cal hrs
+  3: BIZ_TO_CAL(32),   // Severity 2 — High:     32 biz hrs ≈ 85 cal hrs
+  2: BIZ_TO_CAL(64),   // Severity 3 — Medium:   64 biz hrs ≈ 171 cal hrs
+  1: BIZ_TO_CAL(120),  // Severity 3 — Low:      15 biz days ≈ 320 cal hrs
+};
+
+// Attention threshold: warn when <30% of SLA window remains
+const SLA_ATTENTION_PERCENT = 30;
+
+// Fixed targets (same across all severity levels per SLA doc)
+export const SLA_ACK_MINUTES = 15;       // Acknowledgment: 15 min
+export const SLA_ANALYSIS_MINUTES = 60;  // Analysis: 60 min
+
+export const SLA_LABELS: Record<Priority, { severity: string; workaround: string; resolution: string }> = {
+  4: { severity: "Severity 1 — Business Critical", workaround: "2 business hours", resolution: "8 business hours" },
+  3: { severity: "Severity 2 — System Defect", workaround: "16 business hours", resolution: "32 business hours" },
+  2: { severity: "Severity 3 — Minor Error", workaround: "64 business hours", resolution: "15 business days" },
+  1: { severity: "Severity 3 — Minor Error", workaround: "64 business hours", resolution: "15 business days" },
+};
 
 export type SLAState = "on_track" | "attention" | "breached" | "met";
 
@@ -57,7 +90,7 @@ export const computeSLA = (t: Ticket): SLAInfo => {
 
   let state: SLAState = "on_track";
   if (remainingMinutes < 0) state = "breached";
-  else if (percent < 30) state = "attention";
+  else if (percent < SLA_ATTENTION_PERCENT) state = "attention";
 
   const abs = Math.abs(remainingMinutes);
   const h = Math.floor(abs / 60);
@@ -75,21 +108,25 @@ export const computeSLA = (t: Ticket): SLAInfo => {
 };
 
 /* ----------------------------------------------------------------------------
- * Deterministic enrichment (stable per ticket id — no random flicker)
+ * Department / category derived from real Freshdesk data
+ * requester_name often contains the dept in parens: "John Smith (NSE-F&A-SYS)"
  * ------------------------------------------------------------------------- */
 
-const DEPARTMENTS = ["Performance", "Access", "Reports", "API", "Procurement", "Compliance", "Trading"];
-const CATEGORIES = ["OMS", "Onboarding", "Compliance", "Webhook", "Data", "Workflow", "Integration"];
-
-const hash = (n: number) => {
-  let x = (n ^ 0x9e3779b9) >>> 0;
-  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
-  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
-  return (x ^ (x >>> 16)) >>> 0;
+const extractDept = (name: string | null): string | null => {
+  if (!name) return null;
+  const match = name.match(/\(([^)]+)\)$/);
+  return match ? match[1] : null;
 };
 
-export const ticketDept = (t: Ticket) => `NSE — ${t.tags[0] ?? DEPARTMENTS[hash(t.id) % DEPARTMENTS.length]}`;
-export const ticketCategory = (t: Ticket) => t.tags[1] ?? CATEGORIES[hash(t.id * 7) % CATEGORIES.length];
+export const ticketDept = (t: Ticket): string => {
+  const dept = extractDept(t.requester_name);
+  return dept ? `NSE — ${dept}` : "NSE";
+};
+
+export const ticketCategory = (t: Ticket): string => t.tags[0] ?? "";
+
+export const requesterDisplayName = (t: Ticket): string =>
+  t.requester_name ? t.requester_name.replace(/\s*\([^)]*\)$/, "").trim() : "Unknown";
 
 /* ----------------------------------------------------------------------------
  * Aggregate metrics for the dashboard

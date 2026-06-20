@@ -1,0 +1,10 @@
+# Supabase project config (used by the Supabase CLI).
+# Set your project ref with:  supabase link --project-ref <PROJECT_REF>
+
+project_id = "hagfwtqqsekoweatlzlr"
+
+[functions.sync-freshdesk]
+# verify_jwt = false lets the dashboard "Refresh" button invoke the function
+# with the public anon key (no end-user auth required for this internal tool).
+# Freshdesk credentials live in Edge Function secrets, never in the client.
+verify_jwt = false

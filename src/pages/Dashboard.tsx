@@ -45,7 +45,7 @@ const Body = ({ tickets, isLoading, openTicket }: { tickets: Ticket[]; isLoading
 };
 
 const Dashboard = () => (
-  <AppShell title="Command Center" subtitle="NSE × Aerchain — real-time support operations">
+  <AppShell>
     {(props) => <Body {...props} />}
   </AppShell>
 );

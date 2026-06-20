@@ -1,6 +1,5 @@
 import { ReactNode, useState } from "react";
-import { Sidebar } from "./Sidebar";
-import { Topbar } from "./Topbar";
+import { Header } from "./Header";
 import { CommandPalette } from "./CommandPalette";
 import { TicketDrawer } from "@/components/tickets/TicketDrawer";
 import { useTickets } from "@/hooks/useTickets";
@@ -14,14 +13,11 @@ interface ShellRenderProps {
 }
 
 interface Props {
-  title: string;
-  subtitle?: string;
   children: (props: ShellRenderProps) => ReactNode;
 }
 
-export const AppShell = ({ title, subtitle, children }: Props) => {
+export const AppShell = ({ children }: Props) => {
   const { tickets, isLoading, isRefreshing, lastUpdated, refresh } = useTickets();
-  const [collapsed, setCollapsed] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
 
   const [selected, setSelected] = useState<Ticket | null>(null);
@@ -35,25 +31,19 @@ export const AppShell = ({ title, subtitle, children }: Props) => {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
+      <Header
+        onOpenCommand={() => setCmdOpen(true)}
+        onRefresh={refresh}
+        isRefreshing={isRefreshing}
+        lastUpdated={lastUpdated}
+      />
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Topbar
-          title={title}
-          subtitle={subtitle}
-          onOpenCommand={() => setCmdOpen(true)}
-          onRefresh={refresh}
-          isRefreshing={isRefreshing}
-          lastUpdated={lastUpdated}
-        />
-
-        <main className="flex-1 overflow-y-auto grid-bg">
-          <div className="mx-auto max-w-[1600px] px-4 py-6 md:px-8 md:py-8">
-            {children({ tickets, isLoading, openTicket })}
-          </div>
-        </main>
-      </div>
+      <main className="flex-1 overflow-y-auto app-canvas">
+        <div className="mx-auto max-w-[1640px] px-4 py-6 md:px-8 md:py-8">
+          {children({ tickets, isLoading, openTicket })}
+        </div>
+      </main>
 
       <CommandPalette
         open={cmdOpen}
