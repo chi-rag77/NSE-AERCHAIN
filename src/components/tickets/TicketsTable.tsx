@@ -11,19 +11,19 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ArrowUpDown, Clock, MoreHorizontal } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { ArrowUpDown, MoreHorizontal } from "lucide-react";
+import { format, formatDistanceToNow, differenceInDays, parseISO } from "date-fns";
 import { Ticket } from "@/types/freshdesk";
 import {
   PRIORITY_META,
   STATUS_META,
   computeSLA,
-  ticketCategory,
   ticketDept,
   initials,
+  requesterDisplayName,
 } from "@/lib/tickets";
 
-type SortKey = "id" | "priority" | "status" | "sla" | "updated";
+type SortKey = "id" | "priority" | "status" | "sla" | "updated" | "created" | "aging";
 
 interface Props {
   tickets: Ticket[];
@@ -34,6 +34,15 @@ interface Props {
   onToggleAll?: (ids: number[]) => void;
   pageSize?: number;
 }
+
+const agingDays = (t: Ticket) => differenceInDays(new Date(), parseISO(t.created_at));
+
+const agingTone = (days: number) => {
+  if (days <= 1) return "text-emerald-600";
+  if (days <= 3) return "text-amber-600";
+  if (days <= 7) return "text-orange-600";
+  return "text-rose-600";
+};
 
 export const TicketsTable = ({
   tickets,
@@ -58,6 +67,8 @@ export const TicketsTable = ({
         case "status": cmp = a.status - b.status; break;
         case "sla": cmp = computeSLA(a).remainingMinutes - computeSLA(b).remainingMinutes; break;
         case "updated": cmp = +new Date(b.updated_at) - +new Date(a.updated_at); break;
+        case "created": cmp = +new Date(b.created_at) - +new Date(a.created_at); break;
+        case "aging": cmp = agingDays(b) - agingDays(a); break;
       }
       return asc ? cmp : -cmp;
     });
@@ -108,16 +119,19 @@ export const TicketsTable = ({
               <Th label="Customer / Dept." className="hidden md:table-cell" />
               <Th k="priority" label="Priority" />
               <Th k="status" label="Status" />
-              <Th k="sla" label="SLA" />
-              <Th label="Assignee" className="hidden lg:table-cell" />
+              <Th label="Created By" className="hidden lg:table-cell" />
+              <Th label="Assigned To" className="hidden lg:table-cell" />
+              <Th k="created" label="Created" className="hidden xl:table-cell" />
               <Th k="updated" label="Updated" className="hidden xl:table-cell" />
+              <Th k="aging" label="Aging" className="hidden xl:table-cell" />
+              <Th k="sla" label="SLA" />
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="py-16 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={12} className="py-16 text-center text-sm text-muted-foreground">
                   No tickets match the current filters.
                 </TableCell>
               </TableRow>
@@ -127,6 +141,7 @@ export const TicketsTable = ({
                 const p = PRIORITY_META[t.priority] ?? { label: String(t.priority), tone: "bg-slate-100 text-slate-600", dot: "bg-slate-400" };
                 const s = STATUS_META[t.status] ?? { label: `Status ${t.status}`, tone: "bg-slate-100 text-slate-600" };
                 const isSel = selected.has(t.id);
+                const days = agingDays(t);
                 return (
                   <TableRow
                     key={t.id}
@@ -142,7 +157,7 @@ export const TicketsTable = ({
                       </TableCell>
                     )}
                     <TableCell className="font-mono text-xs font-semibold text-primary">NSE-{t.id}</TableCell>
-                    <TableCell className="max-w-[260px]">
+                    <TableCell className="max-w-[220px]">
                       <div className="flex items-center gap-2">
                         <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", p.dot)} />
                         <span className="truncate text-sm font-medium">{t.subject}</span>
@@ -150,7 +165,6 @@ export const TicketsTable = ({
                     </TableCell>
                     <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
                       <div className="font-medium text-foreground/80">{ticketDept(t)}</div>
-                      <div>{ticketCategory(t)}</div>
                     </TableCell>
                     <TableCell>
                       <span className={cn("rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", p.tone)}>
@@ -160,13 +174,20 @@ export const TicketsTable = ({
                     <TableCell>
                       <span className={cn("rounded-md px-2 py-0.5 text-[11px] font-semibold", s.tone)}>{s.label}</span>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <span className={cn("h-1.5 w-1.5 rounded-full", sla.dot)} />
-                        <span className={cn("text-xs font-medium", sla.tone)}>{sla.label}</span>
-                        <span className="text-[11px] text-muted-foreground">· {sla.remaining}</span>
+
+                    {/* Created By */}
+                    <TableCell className="hidden lg:table-cell">
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-6 w-6">
+                          <AvatarFallback className="bg-violet-100 text-violet-700 text-[9px] font-semibold">
+                            {initials(requesterDisplayName(t))}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-xs font-medium max-w-[120px] truncate">{requesterDisplayName(t)}</span>
                       </div>
                     </TableCell>
+
+                    {/* Assigned To */}
                     <TableCell className="hidden lg:table-cell">
                       <div className="flex items-center gap-2">
                         <Avatar className="h-6 w-6">
@@ -174,15 +195,38 @@ export const TicketsTable = ({
                             {initials(t.responder_name)}
                           </AvatarFallback>
                         </Avatar>
-                        <span className="text-xs font-medium">{t.responder_name ?? "Unassigned"}</span>
+                        <span className="text-xs font-medium max-w-[120px] truncate">{t.responder_name ?? "Unassigned"}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="hidden text-xs text-muted-foreground xl:table-cell">
-                      <span className="inline-flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {formatDistanceToNow(new Date(t.updated_at), { addSuffix: true })}
+
+                    {/* Created Date */}
+                    <TableCell className="hidden xl:table-cell">
+                      <div className="text-xs text-foreground/80">{format(parseISO(t.created_at), "dd MMM yyyy")}</div>
+                      <div className="text-[11px] text-muted-foreground">{format(parseISO(t.created_at), "h:mm a")}</div>
+                    </TableCell>
+
+                    {/* Updated Date */}
+                    <TableCell className="hidden xl:table-cell">
+                      <div className="text-xs text-foreground/80">{format(parseISO(t.updated_at), "dd MMM yyyy")}</div>
+                      <div className="text-[11px] text-muted-foreground">{formatDistanceToNow(parseISO(t.updated_at), { addSuffix: true })}</div>
+                    </TableCell>
+
+                    {/* Aging */}
+                    <TableCell className="hidden xl:table-cell">
+                      <span className={cn("text-xs font-semibold", agingTone(days))}>
+                        {days === 0 ? "Today" : `${days}d`}
                       </span>
                     </TableCell>
+
+                    {/* SLA */}
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn("h-1.5 w-1.5 rounded-full", sla.dot)} />
+                        <span className={cn("text-xs font-medium", sla.tone)}>{sla.label}</span>
+                        <span className="text-[11px] text-muted-foreground">· {sla.remaining}</span>
+                      </div>
+                    </TableCell>
+
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground opacity-0 group-hover:opacity-100">
                         <MoreHorizontal size={14} />
