@@ -1,7 +1,7 @@
 # Supabase project config (used by the Supabase CLI).
 # Set your project ref with:  supabase link --project-ref <PROJECT_REF>
 
-project_id = "nse-aerchain"
+project_id = "hagfwtqqsekoweatlzlr"
 
 [functions.sync-freshdesk]
 # verify_jwt = false lets the dashboard "Refresh" button invoke the function

@@ -30,10 +30,13 @@ const json = (body: unknown, status = 200) =>
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
-  const DOMAIN = Deno.env.get("FRESHDESK_DOMAIN");
+  // Accept a bare workspace ("aerchain") or a full host ("aerchain.freshdesk.com").
+  const rawDomain = Deno.env.get("FRESHDESK_DOMAIN");
+  const DOMAIN = rawDomain && !rawDomain.includes(".") ? `${rawDomain}.freshdesk.com` : rawDomain;
   const API_KEY = Deno.env.get("FRESHDESK_API_KEY");
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  // Support both legacy service_role JWT and the new secret API key.
+  const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEY");
   const COMPANY_ID = Deno.env.get("FRESHDESK_COMPANY_ID");
   const SYNC_CONVOS = Deno.env.get("SYNC_CONVERSATIONS") !== "false";
 
