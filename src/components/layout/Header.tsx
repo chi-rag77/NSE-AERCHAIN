@@ -1,12 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import {
   Home,
-  User,
-  Layers,
-  Users,
-  Activity,
-  BarChart2,
-  BookOpen,
+  Ticket as TicketIcon,
   Bell,
   Moon,
   Sun,
@@ -22,12 +17,7 @@ import { formatDistanceToNow } from "date-fns";
 
 const nav = [
   { label: "Home", path: "/", icon: Home },
-  { label: "My Space", path: "/my-space", icon: User },
-  { label: "Queue", path: "/tickets", icon: Layers },
-  { label: "Customer 360", path: "/customer", icon: Users },
-  { label: "Pulse", path: "/sla", icon: Activity },
-  { label: "Reports", path: "/analytics", icon: BarChart2 },
-  { label: "Knowledge Hub", path: "/knowledge", icon: BookOpen },
+  { label: "Tickets", path: "/tickets", icon: TicketIcon },
 ];
 
 interface Props {
