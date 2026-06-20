@@ -41,7 +41,7 @@ export const statusLabel = (s: number) => STATUS_META[s]?.label ?? "Unknown";
 // Calendar-hour equivalents of the business-hour SLA targets
 const BIZ_TO_CAL = (bizHours: number) => Math.round((bizHours / 9) * 24);
 
-const SLA_RESOLUTION_HOURS: Record<Priority, number> = {
+export const SLA_RESOLUTION_HOURS: Record<Priority, number> = {
   4: BIZ_TO_CAL(8),    // Severity 1 — Critical: 8 biz hrs ≈ 21 cal hrs
   3: BIZ_TO_CAL(32),   // Severity 2 — High:     32 biz hrs ≈ 85 cal hrs
   2: BIZ_TO_CAL(64),   // Severity 3 — Medium:   64 biz hrs ≈ 171 cal hrs
