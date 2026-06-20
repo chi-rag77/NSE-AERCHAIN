@@ -75,7 +75,19 @@ Deno.serve(async (req) => {
       throw new Error("NSE company not found in Freshdesk. Set FRESHDESK_COMPANY_ID secret to skip lookup.");
     }
 
-    // ── 2. Fetch NSE tickets (paginated, up to 10 pages × 100) ────────────
+    // ── 2. Fetch agents map (id → name) ───────────────────────────────────
+    const agentsMap: Record<number, string> = {};
+    try {
+      const aRes = await fetch(`${baseUrl}/agents?per_page=100`, { headers: fdHeaders });
+      if (aRes.ok) {
+        const agents = await aRes.json();
+        for (const a of agents) {
+          agentsMap[a.id] = a.contact?.name ?? a.contact?.email ?? "Agent";
+        }
+      }
+    } catch { /* non-fatal */ }
+
+    // ── 3. Fetch NSE tickets (paginated, up to 10 pages × 100) ────────────
     const baseFilter = `?include=requester,company,stats&company_id=${companyId}&per_page=100&order_by=updated_at&order_type=desc`;
 
     const allTickets: any[] = [];
@@ -104,7 +116,7 @@ Deno.serve(async (req) => {
       tags: t.tags ?? [],
       company_name: t.company?.name ?? "NSE",
       requester_name: t.requester?.name ?? t.requester?.email ?? null,
-      responder_name: null,
+      responder_name: t.responder_id ? (agentsMap[t.responder_id] ?? null) : null,
       sla_policy_id: t.sla_policy_id ?? null,
       synced_at: new Date().toISOString(),
     }));

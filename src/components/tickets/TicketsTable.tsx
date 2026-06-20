@@ -18,7 +18,6 @@ import {
   PRIORITY_META,
   STATUS_META,
   computeSLA,
-  ticketDept,
   initials,
   requesterDisplayName,
 } from "@/lib/tickets";
@@ -116,7 +115,6 @@ export const TicketsTable = ({
               )}
               <Th k="id" label="Ticket" />
               <Th label="Subject" />
-              <Th label="Customer / Dept." className="hidden md:table-cell" />
               <Th k="priority" label="Priority" />
               <Th k="status" label="Status" />
               <Th label="Created By" className="hidden lg:table-cell" />
@@ -163,9 +161,7 @@ export const TicketsTable = ({
                         <span className="truncate text-sm font-medium">{t.subject}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
-                      <div className="font-medium text-foreground/80">{ticketDept(t)}</div>
-                    </TableCell>
+
                     <TableCell>
                       <span className={cn("rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", p.tone)}>
                         {p.label}
