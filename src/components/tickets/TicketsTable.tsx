@@ -124,8 +124,8 @@ export const TicketsTable = ({
             ) : (
               rows.map((t) => {
                 const sla = computeSLA(t);
-                const p = PRIORITY_META[t.priority];
-                const s = STATUS_META[t.status];
+                const p = PRIORITY_META[t.priority] ?? { label: String(t.priority), tone: "bg-slate-100 text-slate-600", dot: "bg-slate-400" };
+                const s = STATUS_META[t.status] ?? { label: `Status ${t.status}`, tone: "bg-slate-100 text-slate-600" };
                 const isSel = selected.has(t.id);
                 return (
                   <TableRow

@@ -14,10 +14,12 @@ export const PRIORITY_META: Record<Priority, { label: string; tone: string; dot:
 
 export const STATUS_META: Record<number, { label: string; tone: string }> = {
   2: { label: "Open", tone: "bg-blue-50 text-blue-700 ring-1 ring-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:ring-blue-500/20" },
-  3: { label: "In Progress", tone: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-500/20" },
+  3: { label: "Pending", tone: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-500/20" },
   4: { label: "Resolved", tone: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20" },
   5: { label: "Closed", tone: "bg-slate-100 text-slate-600 ring-1 ring-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:ring-slate-500/20" },
   6: { label: "Waiting", tone: "bg-violet-50 text-violet-700 ring-1 ring-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/20" },
+  7: { label: "In Progress", tone: "bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20" },
+  8: { label: "On Hold", tone: "bg-orange-50 text-orange-700 ring-1 ring-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:ring-orange-500/20" },
 };
 
 export const priorityLabel = (p: number) => PRIORITY_META[p as Priority]?.label ?? String(p);
