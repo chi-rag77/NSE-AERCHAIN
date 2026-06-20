@@ -39,8 +39,8 @@ export const AppShell = ({ children }: Props) => {
         lastUpdated={lastUpdated}
       />
 
-      <main className="flex-1 overflow-y-auto grid-bg">
-        <div className="mx-auto max-w-[1600px] px-4 py-6 md:px-8 md:py-8">
+      <main className="flex-1 overflow-y-auto app-canvas">
+        <div className="mx-auto max-w-[1640px] px-4 py-6 md:px-8 md:py-8">
           {children({ tickets, isLoading, openTicket })}
         </div>
       </main>
