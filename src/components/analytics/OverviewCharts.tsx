@@ -125,7 +125,7 @@ export const OverviewCharts = ({ tickets, dateRange }: Props) => {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
       {/* Ticket Trend — Area Chart */}
-      <Card className="border-none shadow-sm xl:col-span-2">
+      <Card className="card-elevated xl:col-span-2">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold">Ticket Trend (Last 7 Days)</CardTitle>
         </CardHeader>
@@ -154,7 +154,7 @@ export const OverviewCharts = ({ tickets, dateRange }: Props) => {
       </Card>
 
       {/* Priority Bar Chart */}
-      <Card className="border-none shadow-sm">
+      <Card className="card-elevated">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold">Priority Breakdown</CardTitle>
         </CardHeader>
@@ -176,7 +176,7 @@ export const OverviewCharts = ({ tickets, dateRange }: Props) => {
       </Card>
 
       {/* SLA Compliance */}
-      <Card className="border-none shadow-sm">
+      <Card className="card-elevated">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold">SLA Compliance</CardTitle>
         </CardHeader>
@@ -215,7 +215,7 @@ export const OverviewCharts = ({ tickets, dateRange }: Props) => {
       </Card>
 
       {/* Category Donut */}
-      <Card className="border-none shadow-sm xl:col-span-2">
+      <Card className="card-elevated xl:col-span-2">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold">Tickets by Category</CardTitle>
         </CardHeader>
