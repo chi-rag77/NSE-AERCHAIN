@@ -188,7 +188,7 @@
   .fd-html a { @apply font-medium underline underline-offset-2 break-all; }
   .fd-html ul { @apply my-2 list-disc pl-5 space-y-1; }
   .fd-html ol { @apply my-2 list-decimal pl-5 space-y-1; }
-  .fd-html blockquote { @apply my-2 border-l-2 border-current/20 pl-3 opacity-80; }
+  .fd-html blockquote { @apply my-2 border-l-2 border-border pl-3 opacity-80; }
   .fd-html img { @apply my-2 max-w-full rounded-lg border border-border/40; }
   .fd-html table { @apply my-2 w-full border-collapse text-[12px]; }
   .fd-html td, .fd-html th { @apply border border-border/40 px-2 py-1 text-left; }
