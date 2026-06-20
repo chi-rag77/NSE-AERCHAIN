@@ -12,9 +12,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Clock, User, Send, Paperclip, History } from "lucide-react";
+import { Clock, User, Send, Paperclip, History, ShieldAlert } from "lucide-react";
 import { format } from "date-fns";
-import { requesterDisplayName, ticketDept } from "@/lib/tickets";
+import { requesterDisplayName, ticketDept, computeSLA, SLA_LABELS, SLA_ACK_MINUTES, SLA_ANALYSIS_MINUTES } from "@/lib/tickets";
+import { cn } from "@/lib/utils";
+import { Priority } from "../../types/freshdesk";
 
 interface TicketDrawerProps {
   ticket: Ticket | null;
@@ -49,10 +51,53 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
 
         <ScrollArea className="flex-1 p-6">
           <div className="space-y-6">
+            {/* SLA Panel */}
+            {(() => {
+              const sla = computeSLA(ticket);
+              const slaLabel = SLA_LABELS[ticket.priority as Priority] ?? SLA_LABELS[1];
+              return (
+                <div className={cn(
+                  "rounded-xl border p-4 space-y-3",
+                  sla.state === "breached" ? "border-rose-200 bg-rose-50 dark:border-rose-500/20 dark:bg-rose-500/5" :
+                  sla.state === "attention" ? "border-amber-200 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/5" :
+                  sla.state === "met" ? "border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/5" :
+                  "border-border bg-secondary/20"
+                )}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className={cn("h-4 w-4", sla.tone)} />
+                      <span className="text-xs font-semibold">{slaLabel.severity}</span>
+                    </div>
+                    <span className={cn("text-xs font-bold", sla.tone)}>{sla.label} · {sla.remaining}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="rounded-lg bg-background/60 px-3 py-2 border border-border/50">
+                      <div className="text-muted-foreground">Acknowledgment</div>
+                      <div className="font-semibold mt-0.5">{SLA_ACK_MINUTES} minutes</div>
+                    </div>
+                    <div className="rounded-lg bg-background/60 px-3 py-2 border border-border/50">
+                      <div className="text-muted-foreground">Analysis</div>
+                      <div className="font-semibold mt-0.5">{SLA_ANALYSIS_MINUTES} minutes</div>
+                    </div>
+                    <div className="rounded-lg bg-background/60 px-3 py-2 border border-border/50">
+                      <div className="text-muted-foreground">Workaround</div>
+                      <div className="font-semibold mt-0.5">{slaLabel.workaround}</div>
+                    </div>
+                    <div className="rounded-lg bg-background/60 px-3 py-2 border border-border/50">
+                      <div className="text-muted-foreground">Full Resolution</div>
+                      <div className="font-semibold mt-0.5">{slaLabel.resolution}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Initial Description */}
+            {ticket.description && (
             <div className="bg-secondary/30 rounded-xl p-4 border border-secondary">
               <p className="text-sm leading-relaxed">{ticket.description}</p>
             </div>
+            )}
 
             <div className="flex items-center gap-2">
               <Separator className="flex-1" />
@@ -120,5 +165,3 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
     </Sheet>
   );
 };
-
-import { cn } from "@/lib/utils";
