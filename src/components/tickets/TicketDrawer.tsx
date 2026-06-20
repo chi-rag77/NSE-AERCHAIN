@@ -71,7 +71,7 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
                 <div className={cn(
                   "rounded-2xl p-4 text-sm shadow-sm",
                   conv.incoming 
-                    ? "bg-white border text-foreground rounded-tl-none" 
+                    ? "bg-card border text-foreground rounded-tl-none"
                     : "bg-primary text-primary-foreground rounded-tr-none"
                 )}>
                   {conv.body_text}
