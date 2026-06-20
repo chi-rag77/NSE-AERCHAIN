@@ -1,9 +1,8 @@
 // ============================================================================
 // sync-freshdesk — Supabase Edge Function (Deno)
 //
-// Pulls tickets (and their conversations) from the Freshdesk API and upserts
-// them into the public.tickets / public.conversations tables. Designed to be
-// invoked on a schedule (pg_cron) and on-demand from the dashboard "Refresh".
+// Pulls NSE tickets (and their conversations) from the Freshdesk API and
+// upserts them into the public.tickets / public.conversations tables.
 //
 // Required Edge Function secrets (supabase secrets set ...):
 //   FRESHDESK_DOMAIN          e.g. yourcompany.freshdesk.com
@@ -12,7 +11,7 @@
 //   SUPABASE_SERVICE_ROLE_KEY (auto-injected in the Supabase runtime)
 //
 // Optional:
-//   FRESHDESK_COMPANY_ID      restrict sync to one company (e.g. NSE)
+//   FRESHDESK_COMPANY_ID      hardcode NSE company ID to skip the lookup
 //   SYNC_CONVERSATIONS        "false" to skip per-ticket conversation fetch
 // ============================================================================
 
@@ -30,14 +29,11 @@ const json = (body: unknown, status = 200) =>
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
-  // Accept a bare workspace ("aerchain") or a full host ("aerchain.freshdesk.com").
   const rawDomain = Deno.env.get("FRESHDESK_DOMAIN");
   const DOMAIN = rawDomain && !rawDomain.includes(".") ? `${rawDomain}.freshdesk.com` : rawDomain;
   const API_KEY = Deno.env.get("FRESHDESK_API_KEY");
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-  // Support both legacy service_role JWT and the new secret API key.
   const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SECRET_KEY");
-  const COMPANY_ID = Deno.env.get("FRESHDESK_COMPANY_ID");
   const SYNC_CONVOS = Deno.env.get("SYNC_CONVERSATIONS") !== "false";
 
   if (!DOMAIN || !API_KEY || !SUPABASE_URL || !SERVICE_ROLE) {
@@ -47,6 +43,22 @@ Deno.serve(async (req) => {
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
   const fdAuth = "Basic " + btoa(`${API_KEY}:X`);
   const fdHeaders = { Authorization: fdAuth, "Content-Type": "application/json" };
+  const baseUrl = `https://${DOMAIN}/api/v2`;
+
+  // ── Resolve NSE company ID ─────────────────────────────────────────────────
+  const getNseCompanyId = async (): Promise<number | null> => {
+    const hardcoded = Deno.env.get("FRESHDESK_COMPANY_ID");
+    if (hardcoded) return Number(hardcoded);
+
+    const res = await fetch(`${baseUrl}/companies?per_page=100`, { headers: fdHeaders });
+    if (!res.ok) return null;
+    const companies = await res.json();
+    const nse = companies.find((c: any) => {
+      const name = (c.name ?? "").toUpperCase();
+      return name === "NSE" || name.includes("NSE ") || name.includes(" NSE") || name.includes("NATIONAL STOCK EXCHANGE");
+    });
+    return nse?.id ?? null;
+  };
 
   // open a sync_log row
   const { data: logRow } = await supabase
@@ -57,15 +69,19 @@ Deno.serve(async (req) => {
   const logId = logRow?.id;
 
   try {
-    // ── 1. Fetch tickets (paginated, up to 100/page) ──────────────────────
-    const baseFilter = COMPANY_ID
-      ? `?include=requester,company,stats&company_id=${COMPANY_ID}&per_page=100&order_by=updated_at&order_type=desc`
-      : `?include=requester,company,stats&per_page=100&order_by=updated_at&order_type=desc`;
+    // ── 1. Resolve NSE company ─────────────────────────────────────────────
+    const companyId = await getNseCompanyId();
+    if (!companyId) {
+      throw new Error("NSE company not found in Freshdesk. Set FRESHDESK_COMPANY_ID secret to skip lookup.");
+    }
+
+    // ── 2. Fetch NSE tickets (paginated, up to 10 pages × 100) ────────────
+    const baseFilter = `?include=requester,company,stats&company_id=${companyId}&per_page=100&order_by=updated_at&order_type=desc`;
 
     const allTickets: any[] = [];
     let page = 1;
     while (page <= 10) {
-      const res = await fetch(`https://${DOMAIN}/api/v2/tickets${baseFilter}&page=${page}`, { headers: fdHeaders });
+      const res = await fetch(`${baseUrl}/tickets${baseFilter}&page=${page}`, { headers: fdHeaders });
       if (!res.ok) throw new Error(`Freshdesk tickets ${res.status}: ${await res.text()}`);
       const batch = await res.json();
       if (!Array.isArray(batch) || batch.length === 0) break;
@@ -86,7 +102,7 @@ Deno.serve(async (req) => {
       company_id: t.company_id ?? null,
       responder_id: t.responder_id ?? null,
       tags: t.tags ?? [],
-      company_name: t.company?.name ?? null,
+      company_name: t.company?.name ?? "NSE",
       requester_name: t.requester?.name ?? t.requester?.email ?? null,
       responder_name: null,
       sla_policy_id: t.sla_policy_id ?? null,
@@ -98,12 +114,12 @@ Deno.serve(async (req) => {
       if (error) throw error;
     }
 
-    // ── 2. Fetch conversations for the synced tickets ─────────────────────
+    // ── 3. Fetch conversations for the synced tickets ──────────────────────
     let convoCount = 0;
     if (SYNC_CONVOS) {
       for (const t of allTickets) {
-        const res = await fetch(`https://${DOMAIN}/api/v2/tickets/${t.id}/conversations?per_page=100`, { headers: fdHeaders });
-        if (!res.ok) continue; // tolerate per-ticket failures
+        const res = await fetch(`${baseUrl}/tickets/${t.id}/conversations?per_page=100`, { headers: fdHeaders });
+        if (!res.ok) continue;
         const convos = await res.json();
         if (!Array.isArray(convos) || !convos.length) continue;
         const rows = convos.map((c: any) => ({
@@ -130,7 +146,7 @@ Deno.serve(async (req) => {
         .eq("id", logId);
     }
 
-    return json({ ok: true, tickets_synced: ticketRows.length, conversations_synced: convoCount });
+    return json({ ok: true, company_id: companyId, tickets_synced: ticketRows.length, conversations_synced: convoCount });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (logId) {
