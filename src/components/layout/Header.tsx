@@ -1,16 +1,16 @@
 import { Link, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard,
-  Ticket as TicketIcon,
-  Clock,
-  AlertTriangle,
-  BarChart3,
-  Settings,
+  Home,
+  User,
+  Layers,
+  Users,
+  Activity,
+  BarChart2,
+  BookOpen,
   Bell,
   Moon,
   Sun,
-  Search,
-  Command,
+  Settings,
   RefreshCw,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -21,12 +21,13 @@ import { isUsingRealAPI } from "@/services/freshdesk";
 import { formatDistanceToNow } from "date-fns";
 
 const nav = [
-  { label: "Dashboard", path: "/", icon: LayoutDashboard },
-  { label: "Tickets", path: "/tickets", icon: TicketIcon },
-  { label: "SLA Monitor", path: "/sla", icon: Clock },
-  { label: "Escalations", path: "/escalations", icon: AlertTriangle },
-  { label: "Analytics", path: "/analytics", icon: BarChart3 },
-  { label: "Settings", path: "/settings", icon: Settings },
+  { label: "Home", path: "/", icon: Home },
+  { label: "My Space", path: "/my-space", icon: User },
+  { label: "Queue", path: "/tickets", icon: Layers },
+  { label: "Customer 360", path: "/customer", icon: Users },
+  { label: "Pulse", path: "/sla", icon: Activity },
+  { label: "Reports", path: "/analytics", icon: BarChart2 },
+  { label: "Knowledge Hub", path: "/knowledge", icon: BookOpen },
 ];
 
 interface Props {
@@ -36,146 +37,125 @@ interface Props {
   lastUpdated: Date | null;
 }
 
-export const Header = ({ onOpenCommand, onRefresh, isRefreshing, lastUpdated }: Props) => {
+export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
   const { pathname } = useLocation();
   const { theme, setTheme } = useTheme();
 
   return (
-    <header className="sticky top-0 z-50 w-full">
-      {/* Ambient top bar glow */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
-
-      <div className="flex h-[68px] items-center justify-between gap-4 border-b border-border/60 bg-background/70 px-5 backdrop-blur-2xl md:px-8">
+    <header className="sticky top-0 z-50 w-full border-b border-[#E8E8F0] bg-white dark:border-border dark:bg-[#0F0F1A]">
+      <div className="flex h-[60px] items-center justify-between px-6 md:px-8">
 
         {/* ── Brand ── */}
-        <Link to="/" className="flex shrink-0 items-center gap-2.5">
-          <div className="relative grid h-8 w-8 place-items-center rounded-xl gradient-brand shadow-lg shadow-primary/40">
-            <span className="text-[15px] font-black text-white">A</span>
-            {/* live pulse dot */}
-            <span className="absolute -right-0.5 -top-0.5 grid h-3 w-3 place-items-center">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-              <span className="relative h-2 w-2 rounded-full bg-emerald-500" />
-            </span>
-          </div>
-          <div className="hidden flex-col leading-none md:flex">
-            <span className="text-sm font-bold tracking-tight">Aerchain</span>
-            <span className="text-[10px] text-muted-foreground">NSE Support OS</span>
-          </div>
+        <Link to="/" className="flex shrink-0 items-center gap-2">
+          {/* Aerchain logo mark — italic bold A in brand coral/red */}
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" className="shrink-0">
+            <path
+              d="M4 24L13 4L22 24M8 17H18"
+              stroke="#E8341C"
+              strokeWidth="2.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span className="hidden text-[15px] font-black uppercase tracking-[0.14em] text-[#1A1A2E] dark:text-white md:inline">
+            Aerchain
+          </span>
         </Link>
 
-        {/* ── Frosted pill nav ── */}
-        <nav className="relative hidden lg:block">
-          {/* gradient shimmer border via pseudo — done inline with box-shadow trick */}
-          <div className="nav-pill-shell relative rounded-full p-[1.5px]">
-            {/* inner frosted surface */}
-            <div className="flex items-center gap-0.5 rounded-full bg-background/60 px-1.5 py-1.5 backdrop-blur-2xl dark:bg-background/40">
-              {nav.map((item) => {
-                const active = pathname === item.path;
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
+        {/* ── Pill nav ── */}
+        <nav className="hidden lg:block">
+          <div className="flex items-center gap-0.5 rounded-full border border-[#E2E2EE] bg-[#F5F5FB] px-1.5 py-1.5 shadow-[0_1px_4px_rgba(0,0,0,0.06)] dark:border-border dark:bg-secondary/40">
+            {nav.map((item) => {
+              const active = pathname === item.path;
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={cn(
+                    "group relative flex items-center gap-1.5 rounded-full px-3.5 py-[7px] text-[13px] font-medium transition-all duration-200",
+                    active
+                      ? "bg-[#6B4EFF] text-white shadow-[0_2px_12px_rgba(107,78,255,0.35)]"
+                      : "text-[#6B6B8A] hover:bg-white hover:text-[#1A1A2E] hover:shadow-[0_1px_4px_rgba(0,0,0,0.08)] dark:text-muted-foreground dark:hover:bg-secondary dark:hover:text-foreground"
+                  )}
+                >
+                  <item.icon
                     className={cn(
-                      "nav-item group relative flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-all duration-300",
-                      active
-                        ? "text-white"
-                        : "text-muted-foreground hover:text-foreground"
+                      "h-[14px] w-[14px] shrink-0",
+                      active ? "text-white" : "text-[#9090A8] group-hover:text-[#6B4EFF] dark:text-muted-foreground"
                     )}
-                  >
-                    {/* active bubble */}
-                    {active && (
-                      <span className="nav-active-bubble absolute inset-0 rounded-full gradient-brand shadow-[0_0_16px_2px_hsl(var(--primary)/0.55)]" />
-                    )}
-
-                    {/* hover highlight (non-active) */}
-                    {!active && (
-                      <span className="absolute inset-0 rounded-full bg-foreground/0 transition-all duration-200 group-hover:bg-foreground/[0.06]" />
-                    )}
-
-                    <item.icon
-                      className={cn(
-                        "relative z-10 h-3.5 w-3.5 shrink-0 transition-all duration-300",
-                        active
-                          ? "drop-shadow-[0_0_6px_rgba(255,255,255,0.8)]"
-                          : "group-hover:text-primary group-hover:drop-shadow-[0_0_4px_hsl(var(--primary)/0.6)]"
-                      )}
-                    />
-                    <span className="relative z-10">{item.label}</span>
-                  </Link>
-                );
-              })}
-            </div>
+                  />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
           </div>
         </nav>
 
         {/* ── Right actions ── */}
-        <div className="flex shrink-0 items-center gap-1.5">
-          {/* data freshness */}
+        <div className="flex shrink-0 items-center gap-0.5">
+          {/* data freshness indicator */}
           <span
             className={cn(
-              "hidden items-center gap-1.5 rounded-full border border-border/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground xl:flex",
+              "mr-2 hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold xl:flex",
               isUsingRealAPI()
-                ? "bg-emerald-500/5 text-emerald-600"
-                : "bg-amber-500/5 text-amber-600"
+                ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10"
+                : "bg-amber-50 text-amber-600 dark:bg-amber-500/10"
             )}
           >
-            <span
-              className={cn(
-                "h-1.5 w-1.5 rounded-full",
-                isUsingRealAPI() ? "animate-pulse bg-emerald-500" : "bg-amber-500"
-              )}
-            />
+            <span className={cn("h-1.5 w-1.5 rounded-full", isUsingRealAPI() ? "animate-pulse bg-emerald-500" : "bg-amber-400")} />
             {isUsingRealAPI() ? "Live" : "Demo"}
           </span>
-
-          {/* search trigger */}
-          <button
-            onClick={onOpenCommand}
-            className="hidden items-center gap-2 rounded-full border border-border/60 bg-secondary/60 px-3 py-1.5 text-[13px] text-muted-foreground backdrop-blur transition-all hover:border-primary/40 hover:bg-secondary hover:text-foreground sm:flex"
-          >
-            <Search className="h-3.5 w-3.5" />
-            <span className="hidden md:inline">Search…</span>
-            <kbd className="hidden items-center gap-0.5 rounded-md border border-border bg-background/80 px-1.5 py-0.5 text-[10px] font-medium lg:flex">
-              <Command className="h-2.5 w-2.5" />K
-            </kbd>
-          </button>
 
           {/* refresh */}
           <Button
             variant="ghost"
             size="icon"
-            className="relative h-8 w-8 rounded-full"
+            className="h-9 w-9 rounded-full text-[#6B6B8A] hover:bg-[#F0F0FA] hover:text-[#1A1A2E] dark:text-muted-foreground dark:hover:bg-secondary"
             onClick={onRefresh}
             disabled={isRefreshing}
             title={lastUpdated ? `Updated ${formatDistanceToNow(lastUpdated, { addSuffix: true })}` : "Refresh"}
           >
-            <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+            <RefreshCw className={cn("h-[17px] w-[17px]", isRefreshing && "animate-spin")} />
           </Button>
 
-          {/* theme */}
+          {/* settings */}
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 rounded-full"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="h-9 w-9 rounded-full text-[#6B6B8A] hover:bg-[#F0F0FA] hover:text-[#1A1A2E] dark:text-muted-foreground dark:hover:bg-secondary"
           >
-            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            <Settings className="h-[17px] w-[17px]" />
           </Button>
 
           {/* bell */}
-          <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-full">
-            <Bell className="h-4 w-4" />
-            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-background" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative h-9 w-9 rounded-full text-[#6B6B8A] hover:bg-[#F0F0FA] hover:text-[#1A1A2E] dark:text-muted-foreground dark:hover:bg-secondary"
+          >
+            <Bell className="h-[17px] w-[17px]" />
+            <span className="absolute right-2 top-2 h-[7px] w-[7px] rounded-full bg-rose-500 ring-[1.5px] ring-white dark:ring-background" />
+          </Button>
+
+          {/* theme toggle */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-full text-[#6B6B8A] hover:bg-[#F0F0FA] hover:text-[#1A1A2E] dark:text-muted-foreground dark:hover:bg-secondary"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          >
+            {theme === "dark" ? <Sun className="h-[17px] w-[17px]" /> : <Moon className="h-[17px] w-[17px]" />}
           </Button>
 
           {/* divider */}
-          <span className="mx-1 h-5 w-px bg-border" />
+          <span className="mx-1.5 h-5 w-px bg-[#E2E2EE] dark:bg-border" />
 
           {/* avatar */}
-          <Avatar className="h-8 w-8 cursor-pointer border border-border transition-transform hover:scale-105">
-            <AvatarFallback className="gradient-brand text-[11px] font-bold text-white">NS</AvatarFallback>
+          <Avatar className="h-8 w-8 cursor-pointer transition-transform hover:scale-105">
+            <AvatarFallback className="bg-[#6B4EFF] text-[11px] font-bold text-white">CH</AvatarFallback>
           </Avatar>
         </div>
+
       </div>
     </header>
   );
