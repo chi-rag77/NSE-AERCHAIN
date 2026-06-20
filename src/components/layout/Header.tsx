@@ -33,28 +33,30 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-[#E8E8F0] bg-white dark:border-border dark:bg-[#0F0F1A]">
-      <div className="flex h-[60px] items-center justify-between px-6 md:px-8">
+      <div className="flex h-[60px] items-center px-6 md:px-8">
 
-        {/* ── Brand ── */}
-        <Link to="/" className="flex shrink-0 items-center gap-2">
-          {/* Aerchain logo mark — italic bold A in brand coral/red */}
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" className="shrink-0">
-            <path
-              d="M4 24L13 4L22 24M8 17H18"
-              stroke="#E8341C"
-              strokeWidth="2.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-          <span className="hidden text-[15px] font-black uppercase tracking-[0.14em] text-[#1A1A2E] dark:text-white md:inline">
-            Aerchain
-          </span>
-        </Link>
+        {/* ── Left group: brand + nav ── */}
+        <div className="flex items-center gap-7">
+          {/* Brand */}
+          <Link to="/" className="flex shrink-0 items-center gap-2">
+            {/* Aerchain logo mark — bold A in brand coral/red */}
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" className="shrink-0">
+              <path
+                d="M4 24L13 4L22 24M8 17H18"
+                stroke="#E8341C"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span className="hidden text-[15px] font-black uppercase tracking-[0.14em] text-[#1A1A2E] dark:text-white md:inline">
+              Aerchain
+            </span>
+          </Link>
 
-        {/* ── Pill nav ── */}
-        <nav className="hidden lg:block">
-          <div className="flex items-center gap-0.5 rounded-full border border-[#E2E2EE] bg-[#F5F5FB] px-1.5 py-1.5 shadow-[0_1px_4px_rgba(0,0,0,0.06)] dark:border-border dark:bg-secondary/40">
+          {/* Pill nav */}
+          <nav className="hidden md:block">
+            <div className="flex items-center gap-0.5 rounded-full border border-[#E2E2EE] bg-[#F5F5FB] p-1 shadow-[0_1px_4px_rgba(0,0,0,0.06)] dark:border-border dark:bg-secondary/40">
             {nav.map((item) => {
               const active = pathname === item.path;
               return (
@@ -77,12 +79,13 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
                   <span>{item.label}</span>
                 </Link>
               );
-            })}
-          </div>
-        </nav>
+              })}
+            </div>
+          </nav>
+        </div>
 
         {/* ── Right actions ── */}
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {/* data freshness indicator */}
           <span
             className={cn(
