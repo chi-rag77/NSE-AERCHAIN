@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   Home,
   Ticket as TicketIcon,
+  FileBarChart,
   Bell,
   Moon,
   Sun,
@@ -18,6 +19,7 @@ import { formatDistanceToNow } from "date-fns";
 const nav = [
   { label: "Home", path: "/", icon: Home },
   { label: "Tickets", path: "/tickets", icon: TicketIcon },
+  { label: "Reports", path: "/reports", icon: FileBarChart },
 ];
 
 interface Props {
