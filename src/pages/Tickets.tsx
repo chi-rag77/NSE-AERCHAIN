@@ -179,7 +179,7 @@ const Body = ({ tickets, isLoading, openTicket }: { tickets: Ticket[]; isLoading
 };
 
 const Tickets = () => (
-  <AppShell title="Tickets" subtitle="Browse, filter and action the full NSE queue">
+  <AppShell>
     {(props) => <Body {...props} />}
   </AppShell>
 );
