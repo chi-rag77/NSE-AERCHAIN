@@ -37,9 +37,9 @@ Freshdesk API ──(Edge Function: sync-freshdesk)──▶ Supabase tables ─
    supabase functions deploy sync-freshdesk --no-verify-jwt
    ```
 
-5. **Schedule the cron** — either run `supabase/migrations/0002_cron.sql`
-   (fill in `<PROJECT_REF>` and `<SUPABASE_ANON_KEY>` first), or use the
-   Dashboard → Edge Functions → sync-freshdesk → Cron.
+5. **Schedule the cron** — paste `supabase/cron.sql` into the Dashboard →
+   SQL Editor and run it (already pre-filled with the project URL + key), or
+   use Dashboard → Edge Functions → sync-freshdesk → Cron.
 
 6. **First sync** (optional manual kick)
    ```bash

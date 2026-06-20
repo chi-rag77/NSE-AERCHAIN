@@ -1,13 +1,12 @@
 -- ============================================================================
--- Schedule the sync-freshdesk Edge Function every 5 minutes via pg_cron + pg_net.
+-- Schedule the sync-freshdesk Edge Function every 5 minutes (pg_cron + pg_net).
 --
--- BEFORE RUNNING: replace the two placeholders below:
---   <PROJECT_REF>          your Supabase project ref (e.g. abcdxyz)
---   <SUPABASE_ANON_KEY>    your project's anon key (safe to use; function has
---                          verify_jwt = false so it accepts the anon key)
+-- Run this ONCE after deploying the function — paste it into the Supabase
+-- Dashboard → SQL Editor and execute. (It is intentionally NOT in migrations/
+-- so `supabase db push` doesn't run it automatically.)
 --
--- Alternatively, skip this file and schedule the function from the Supabase
--- Dashboard → Edge Functions → sync-freshdesk → Cron.
+-- The Authorization header uses the publishable/anon key, which is safe to use
+-- here because the function is deployed with --no-verify-jwt.
 -- ============================================================================
 
 create extension if not exists pg_cron;
@@ -22,12 +21,14 @@ select cron.schedule(
   '*/5 * * * *',
   $$
   select net.http_post(
-    url     := 'https://<PROJECT_REF>.supabase.co/functions/v1/sync-freshdesk',
+    url     := 'https://hagfwtqqsekoweatlzlr.supabase.co/functions/v1/sync-freshdesk',
     headers := jsonb_build_object(
       'Content-Type',  'application/json',
-      'Authorization', 'Bearer <SUPABASE_ANON_KEY>'
+      'Authorization', 'Bearer sb_publishable_aQ5Y5cHX3eQSArrnof1nXg_pgmJk-gK'
     ),
     body    := '{}'::jsonb
   );
   $$
 );
+
+-- verify:  select * from cron.job;
