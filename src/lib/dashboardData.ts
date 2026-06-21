@@ -76,15 +76,17 @@ export const buildAssurance = (tickets: Ticket[]): AssuranceSummary => {
       !(RESOLVED(t) && isBefore(parseISO(t.updated_at), curStart))
   ).length;
 
+  // Live count of everything currently breached or at-risk — used in BOTH the
+  // headline and the pulse stat so they always agree.
   let breaching = 0;
   tickets.forEach((t) => {
     const s = computeSLA(t).state;
     if (s === "breached" || s === "attention") breaching++;
   });
-  const breachingCur = tickets.filter((t) => within(t.created_at, curStart, now) &&
-    ["breached", "attention"].includes(computeSLA(t).state)).length;
   const breachingPrev = tickets.filter((t) => within(t.created_at, prevStart, prevEnd) &&
     computeSLA(t).state === "breached").length;
+  // Only show a delta when the prior base is large enough to be meaningful.
+  const breachingDelta = breachingPrev >= 3 ? pctDelta(breaching, breachingPrev) : null;
 
   const verdict: Verdict =
     curComp >= SLA_TARGET && breaching === 0 ? "healthy" :
@@ -101,7 +103,7 @@ export const buildAssurance = (tickets: Ticket[]): AssuranceSummary => {
     { key: "new", label: "New", value: createdCur.length, delta: pctDelta(createdCur.length, createdPrev.length), goodWhenUp: false },
     { key: "resolved", label: "Resolved", value: resolvedCur.length, delta: pctDelta(resolvedCur.length, resolvedPrev.length), goodWhenUp: true },
     { key: "backlog", label: "Open Backlog", value: openNow, delta: pctDelta(openNow, openPrev), goodWhenUp: false },
-    { key: "breaching", label: "At Risk / Breached", value: breachingCur, delta: pctDelta(breachingCur, breachingPrev), goodWhenUp: false },
+    { key: "breaching", label: "At Risk / Breached", value: breaching, delta: breachingDelta, goodWhenUp: false },
   ];
 
   return {
