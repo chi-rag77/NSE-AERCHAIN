@@ -13,9 +13,9 @@ interface Props {
 }
 
 const verdictTheme = {
-  healthy: { color: "#10b981", soft: "bg-emerald-500/10", ring: "text-emerald-500", text: "text-emerald-600 dark:text-emerald-400", icon: CheckCircle2, label: "Healthy", tint: "16,185,129" },
-  watch:   { color: "#f59e0b", soft: "bg-amber-500/10",   ring: "text-amber-500",   text: "text-amber-600 dark:text-amber-400",   icon: AlertTriangle, label: "Watch",  tint: "245,158,11" },
-  at_risk: { color: "#f43f5e", soft: "bg-rose-500/10",    ring: "text-rose-500",    text: "text-rose-600 dark:text-rose-400",     icon: ShieldAlert,  label: "At Risk", tint: "244,63,94" },
+  healthy: { color: "#10b981", soft: "bg-emerald-500/10", ring: "text-emerald-500", text: "text-emerald-600 dark:text-emerald-400", icon: CheckCircle2, label: "On Track", tint: "16,185,129" },
+  watch:   { color: "#f59e0b", soft: "bg-amber-500/10",   ring: "text-amber-500",   text: "text-amber-600 dark:text-amber-400",   icon: AlertTriangle, label: "Monitoring", tint: "245,158,11" },
+  at_risk: { color: "#f97316", soft: "bg-orange-500/10",  ring: "text-orange-500",  text: "text-orange-600 dark:text-orange-400", icon: ShieldAlert,  label: "Focus Area", tint: "249,115,22" },
 };
 
 /* ── Radial SLA gauge ───────────────────────────────────────────────────── */
