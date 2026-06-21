@@ -1,6 +1,9 @@
 export type Priority = 1 | 2 | 3 | 4; // 1: Low, 2: Medium, 3: High, 4: Urgent
 export type Status = 2 | 3 | 4 | 5 | 6; // 2: Open, 3: Pending, 4: Resolved, 5: Closed, 6: Waiting on Customer
 
+/** Freshdesk ticket type (Question / Incident / Problem / Feature Request / Lead — or custom label) */
+export type TicketType = string | null;
+
 export interface Ticket {
   id: number;
   subject: string;
@@ -13,10 +16,24 @@ export interface Ticket {
   company_id: number;
   responder_id: number | null;
   tags: string[];
+  // Freshdesk-native category fields
+  ticket_type: TicketType;   // Freshdesk "Type" field (Question/Incident/Problem/…)
+  category: string | null;   // Freshdesk "Category" custom field
+  sub_category: string | null;
+  // Freshdesk stats (resolved_at, first_responded_at from include=stats)
+  fr_due_by: string | null;
+  due_by: string | null;
+  fr_escalated: boolean;
+  is_escalated: boolean;
+  spam: boolean;
+  // Agent / company metadata
   company_name?: string;
   requester_name?: string;
+  requester_email?: string;
   responder_name?: string;
   sla_policy_id?: number;
+  // All Freshdesk custom_fields as a passthrough bag
+  custom_fields: Record<string, unknown>;
 }
 
 export interface Conversation {

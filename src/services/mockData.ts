@@ -1,8 +1,21 @@
 import { Ticket, Conversation } from '../types/freshdesk';
 import { subHours, subDays, formatISO } from 'date-fns';
 
+const mockDefaults = {
+  ticket_type: null as null,
+  category: null as null,
+  sub_category: null as null,
+  fr_due_by: null as null,
+  due_by: null as null,
+  fr_escalated: false,
+  is_escalated: false,
+  spam: false,
+  custom_fields: {} as Record<string, unknown>,
+};
+
 export const MOCK_TICKETS: Ticket[] = [
   {
+    ...mockDefaults,
     id: 10245,
     subject: "Critical: Latency spikes in Order Management System",
     description: "We are observing intermittent latency spikes exceeding 500ms in the OMS gateway.",
@@ -16,9 +29,11 @@ export const MOCK_TICKETS: Ticket[] = [
     requester_name: "Rajesh Kumar",
     responder_id: 501,
     responder_name: "Ananya Sharma",
-    tags: ["Performance", "OMS", "Critical"]
+    tags: ["Performance", "OMS"],
+    ticket_type: "Incident",
   },
   {
+    ...mockDefaults,
     id: 10246,
     subject: "User Access: New trader onboarding request",
     description: "Requesting access for 5 new traders from the institutional desk.",
@@ -32,9 +47,11 @@ export const MOCK_TICKETS: Ticket[] = [
     requester_name: "Suresh Raina",
     responder_id: 502,
     responder_name: "Vikram Singh",
-    tags: ["Access", "Onboarding"]
+    tags: ["Onboarding"],
+    ticket_type: "Feature Request",
   },
   {
+    ...mockDefaults,
     id: 10247,
     subject: "Report Generation: Monthly compliance report failing",
     description: "The automated compliance report for February failed to generate this morning.",
@@ -48,9 +65,11 @@ export const MOCK_TICKETS: Ticket[] = [
     requester_name: "Priya Mehta",
     responder_id: null,
     responder_name: "Unassigned",
-    tags: ["Reports", "Compliance"]
+    tags: ["Compliance"],
+    ticket_type: "Problem",
   },
   {
+    ...mockDefaults,
     id: 10248,
     subject: "API Integration: Webhook timeout on trade confirmation",
     description: "Our listener is timing out when receiving trade confirmations from Aerchain.",
@@ -64,7 +83,8 @@ export const MOCK_TICKETS: Ticket[] = [
     requester_name: "Amit Shah",
     responder_id: 501,
     responder_name: "Ananya Sharma",
-    tags: ["API", "Webhook"]
+    tags: ["API", "Webhook"],
+    ticket_type: "Incident",
   }
 ];
 

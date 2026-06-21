@@ -220,7 +220,8 @@ const toBreakdown = (map: Map<string, number>, total: number, limit: number): Br
 export const categoryBreakdown = (tickets: Ticket[], limit = 5): Breakdown[] => {
   const m = new Map<string, number>();
   tickets.forEach((t) => {
-    const k = t.tags[0] ?? "Uncategorised";
+    // Prefer Freshdesk native type field, fall back to category, then first tag
+    const k = t.ticket_type ?? t.category ?? t.tags[0] ?? "Uncategorised";
     m.set(k, (m.get(k) ?? 0) + 1);
   });
   return toBreakdown(m, tickets.length, limit);

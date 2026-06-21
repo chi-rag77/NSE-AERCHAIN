@@ -123,7 +123,8 @@ export const ticketDept = (t: Ticket): string => {
   return dept ? `NSE — ${dept}` : "NSE";
 };
 
-export const ticketCategory = (t: Ticket): string => t.tags[0] ?? "";
+export const ticketCategory = (t: Ticket): string =>
+  t.ticket_type ?? t.category ?? t.tags[0] ?? "";
 
 export const requesterDisplayName = (t: Ticket): string =>
   t.requester_name ? t.requester_name.replace(/\s*\([^)]*\)$/, "").trim() : "Unknown";
