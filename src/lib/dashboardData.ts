@@ -92,12 +92,13 @@ export const buildAssurance = (tickets: Ticket[]): AssuranceSummary => {
     curComp >= SLA_TARGET && breaching === 0 ? "healthy" :
     curComp >= 85 ? "watch" : "at_risk";
 
+  const tk = (n: number) => `${n} ticket${n === 1 ? "" : "s"}`;
   const statement =
     verdict === "healthy"
-      ? `NSE support is healthy — ${curComp}% SLA compliance with no tickets at risk.`
+      ? `NSE support is in great shape — ${curComp}% SLA compliance and every ticket comfortably on track.`
       : verdict === "watch"
-        ? `NSE support is on track — ${curComp}% SLA compliance, ${breaching} ticket${breaching === 1 ? "" : "s"} need attention.`
-        : `NSE support needs attention — ${curComp}% SLA compliance, ${breaching} ticket${breaching === 1 ? "" : "s"} at risk or breached.`;
+        ? `NSE support is tracking well at ${curComp}% SLA compliance. We're actively progressing ${tk(breaching)} to keep service levels strong.`
+        : `We're focused on lifting NSE service levels — currently ${curComp}% SLA compliance, with ${tk(breaching)} being prioritised to bring performance back to target.`;
 
   const pulse: PulseStat[] = [
     { key: "new", label: "New", value: createdCur.length, delta: pctDelta(createdCur.length, createdPrev.length), goodWhenUp: false },
