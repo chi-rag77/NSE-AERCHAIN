@@ -3,8 +3,8 @@ import { subHours, subDays, formatISO } from 'date-fns';
 
 const mockDefaults = {
   ticket_type: null as null,
-  category: null as null,
-  sub_category: null as null,
+  module: null as null,
+  sub_type: null as null,
   fr_due_by: null as null,
   due_by: null as null,
   fr_escalated: false,
@@ -30,7 +30,8 @@ export const MOCK_TICKETS: Ticket[] = [
     responder_id: 501,
     responder_name: "Ananya Sharma",
     tags: ["Performance", "OMS"],
-    ticket_type: "Incident",
+    ticket_type: "Bug",
+    module: "PO",
   },
   {
     ...mockDefaults,
@@ -48,7 +49,8 @@ export const MOCK_TICKETS: Ticket[] = [
     responder_id: 502,
     responder_name: "Vikram Singh",
     tags: ["Onboarding"],
-    ticket_type: "Feature Request",
+    ticket_type: "Service Task",
+    module: "Org Settings",
   },
   {
     ...mockDefaults,
@@ -66,7 +68,8 @@ export const MOCK_TICKETS: Ticket[] = [
     responder_id: null,
     responder_name: "Unassigned",
     tags: ["Compliance"],
-    ticket_type: "Problem",
+    ticket_type: "Bug",
+    module: "Reports",
   },
   {
     ...mockDefaults,
@@ -84,7 +87,8 @@ export const MOCK_TICKETS: Ticket[] = [
     responder_id: 501,
     responder_name: "Ananya Sharma",
     tags: ["API", "Webhook"],
-    ticket_type: "Incident",
+    ticket_type: "Bug",
+    module: "Invoice",
   }
 ];
 

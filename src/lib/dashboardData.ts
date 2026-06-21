@@ -14,8 +14,8 @@ import {
 export const SLA_TARGET = 95;        // contractual compliance target (%)
 export const WINDOW_DAYS = 30;       // rolling reporting window
 const RESOLVED = (t: Ticket) => t.status === 4 || t.status === 5;
-const AWAITING_NSE = (t: Ticket) => t.status === 6;                 // Waiting on Customer
-const AWAITING_AERCHAIN = (t: Ticket) => !RESOLVED(t) && t.status !== 6;
+const AWAITING_NSE = (t: Ticket) => t.status === 8;                 // Waiting on Customer (SLA paused)
+const AWAITING_AERCHAIN = (t: Ticket) => !RESOLVED(t) && t.status !== 8; // Open/Pending/On Tech/On Product
 
 const within = (iso: string, start: Date, end: Date) =>
   isWithinInterval(parseISO(iso), { start, end });
@@ -220,8 +220,18 @@ const toBreakdown = (map: Map<string, number>, total: number, limit: number): Br
 export const categoryBreakdown = (tickets: Ticket[], limit = 5): Breakdown[] => {
   const m = new Map<string, number>();
   tickets.forEach((t) => {
-    // Prefer Freshdesk native type field, fall back to category, then first tag
-    const k = t.ticket_type ?? t.category ?? t.tags[0] ?? "Uncategorised";
+    // Prefer Freshdesk native Type (Query/Bug/Tech-Task…), fall back to module, then first tag
+    const k = t.ticket_type ?? t.module ?? t.tags[0] ?? "Uncategorised";
+    m.set(k, (m.get(k) ?? 0) + 1);
+  });
+  return toBreakdown(m, tickets.length, limit);
+};
+
+/** Breakdown by Freshdesk Module (cf_module): PO, Invoice, GRN, PR, … */
+export const moduleBreakdown = (tickets: Ticket[], limit = 6): Breakdown[] => {
+  const m = new Map<string, number>();
+  tickets.forEach((t) => {
+    const k = t.module ?? "Unspecified";
     m.set(k, (m.get(k) ?? 0) + 1);
   });
   return toBreakdown(m, tickets.length, limit);

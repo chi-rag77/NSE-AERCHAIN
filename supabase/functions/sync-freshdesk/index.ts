@@ -117,10 +117,12 @@ Deno.serve(async (req) => {
       responder_id: t.responder_id ?? null,
       // Tags directly from Freshdesk
       tags: Array.isArray(t.tags) ? t.tags : [],
-      // Freshdesk native type / category fields
+      // Freshdesk "Type" field (Query / Bug / Tech-Task / Service Task / …)
       ticket_type: t.type ?? null,
-      category: t.category ?? t.custom_fields?.category ?? null,
-      sub_category: t.sub_category ?? t.custom_fields?.sub_category ?? null,
+      // cf_module — functional area (PO / Invoice / GRN / PR / RFQ-QC / …)
+      module: t.custom_fields?.cf_module ?? null,
+      // cf_issue_type — "Sub Type - Module" (Slowness / Login / Integration / …)
+      sub_type: t.custom_fields?.cf_issue_type ?? null,
       // SLA due dates from include=stats
       fr_due_by: t.fr_due_by ?? null,
       due_by: t.due_by ?? null,

@@ -4,11 +4,12 @@
 -- Safe to run multiple times (uses IF NOT EXISTS / DO $$ patterns).
 -- ============================================================================
 
--- Freshdesk "Type" field (Question / Incident / Problem / Feature Request / Lead)
+-- Freshdesk "Type" (Query / Bug / Tech-Task / Service Task / Requirement / CS Task / …)
+-- module = cf_module (PO / Invoice / GRN / …), sub_type = cf_issue_type
 alter table public.tickets
-  add column if not exists ticket_type   text,
-  add column if not exists category      text,
-  add column if not exists sub_category  text;
+  add column if not exists ticket_type  text,
+  add column if not exists module       text,
+  add column if not exists sub_type     text;
 
 -- SLA due-date columns (from include=stats)
 alter table public.tickets
@@ -28,4 +29,4 @@ alter table public.tickets
 
 -- Helpful indexes
 create index if not exists tickets_ticket_type_idx on public.tickets (ticket_type);
-create index if not exists tickets_category_idx    on public.tickets (category);
+create index if not exists tickets_module_idx      on public.tickets (module);

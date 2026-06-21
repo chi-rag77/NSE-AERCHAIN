@@ -1,11 +1,11 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { ShieldAlert, Clock3, ArrowRight, Tag, Building2, CheckCircle2 } from "lucide-react";
+import { ShieldAlert, Clock3, ArrowRight, Tag, Boxes, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Ticket } from "@/types/freshdesk";
 import { computeSLA, PRIORITY_META } from "@/lib/tickets";
 import {
-  atRiskTickets, categoryBreakdown, departmentBreakdown,
+  atRiskTickets, categoryBreakdown, moduleBreakdown,
 } from "@/lib/dashboardData";
 
 const BreakdownList = ({ icon: Icon, title, color, data }: {
@@ -42,7 +42,7 @@ export const AttentionPanel = ({ tickets, onOpen }: {
 }) => {
   const atRisk = useMemo(() => atRiskTickets(tickets), [tickets]);
   const categories = useMemo(() => categoryBreakdown(tickets), [tickets]);
-  const departments = useMemo(() => departmentBreakdown(tickets), [tickets]);
+  const modules = useMemo(() => moduleBreakdown(tickets), [tickets]);
 
   const breached = tickets.filter((t) => computeSLA(t).state === "breached").length;
   const attention = tickets.filter((t) => computeSLA(t).state === "attention").length;
@@ -103,8 +103,8 @@ export const AttentionPanel = ({ tickets, onOpen }: {
         </div>
       </div>
 
-      <BreakdownList icon={Tag} title="Top Issue Categories" color="#8b5cf6" data={categories} />
-      <BreakdownList icon={Building2} title="By NSE Department" color="#0ea5e9" data={departments} />
+      <BreakdownList icon={Tag} title="By Issue Type" color="#8b5cf6" data={categories} />
+      <BreakdownList icon={Boxes} title="By Module" color="#0ea5e9" data={modules} />
     </div>
   );
 };

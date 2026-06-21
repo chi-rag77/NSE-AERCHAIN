@@ -1,7 +1,9 @@
 export type Priority = 1 | 2 | 3 | 4; // 1: Low, 2: Medium, 3: High, 4: Urgent
-export type Status = 2 | 3 | 4 | 5 | 6; // 2: Open, 3: Pending, 4: Resolved, 5: Closed, 6: Waiting on Customer
+// Real NSE Freshdesk status codes:
+//   2 Open · 3 Pending · 4 Resolved · 5 Closed · 7 On Tech · 8 Waiting on Customer · 9 On Product
+export type Status = 2 | 3 | 4 | 5 | 7 | 8 | 9;
 
-/** Freshdesk ticket type (Question / Incident / Problem / Feature Request / Lead — or custom label) */
+/** Freshdesk ticket "Type" (Query / Bug / Tech-Task / Service Task / Requirement / CS Task / …) */
 export type TicketType = string | null;
 
 export interface Ticket {
@@ -16,10 +18,10 @@ export interface Ticket {
   company_id: number;
   responder_id: number | null;
   tags: string[];
-  // Freshdesk-native category fields
-  ticket_type: TicketType;   // Freshdesk "Type" field (Question/Incident/Problem/…)
-  category: string | null;   // Freshdesk "Category" custom field
-  sub_category: string | null;
+  // Freshdesk-native classification fields
+  ticket_type: TicketType;     // Freshdesk "Type" (Query/Bug/Tech-Task/Service Task/…)
+  module: string | null;       // cf_module — PO / Invoice / GRN / PR / RFQ-QC / …
+  sub_type: string | null;     // cf_issue_type — Slowness / Login / Integration / …
   // Freshdesk stats (resolved_at, first_responded_at from include=stats)
   fr_due_by: string | null;
   due_by: string | null;
