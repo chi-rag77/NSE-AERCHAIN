@@ -1,12 +1,10 @@
 import { useMemo } from "react";
 import { AppShell } from "@/components/layout/AppShell";
-import { HealthHero } from "@/components/dashboard/HealthHero";
-import { MetricStrip } from "@/components/dashboard/MetricStrip";
-import { PriorityQueue } from "@/components/dashboard/PriorityQueue";
-import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
-import { BottomGrid } from "@/components/dashboard/BottomGrid";
-import { OverviewCharts } from "@/components/analytics/OverviewCharts";
-import { computeMetrics } from "@/lib/tickets";
+import { VerdictHero } from "@/components/dashboard/VerdictHero";
+import { AssuranceTrends } from "@/components/dashboard/AssuranceTrends";
+import { AttentionPanel } from "@/components/dashboard/AttentionPanel";
+import { SLABreakdownTable } from "@/components/dashboard/SLABreakdownTable";
+import { buildAssurance, complianceTrend } from "@/lib/dashboardData";
 import { Ticket } from "@/types/freshdesk";
 
 const Body = ({ tickets, isLoading, openTicket }: {
@@ -14,22 +12,23 @@ const Body = ({ tickets, isLoading, openTicket }: {
   isLoading: boolean;
   openTicket: (t: Ticket) => void;
 }) => {
-  const metrics = useMemo(() => computeMetrics(tickets), [tickets]);
+  const summary = useMemo(() => buildAssurance(tickets), [tickets]);
+  const trend = useMemo(() => complianceTrend(tickets), [tickets]);
 
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <div className="h-64 animate-pulse rounded-3xl bg-card" />
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-28 animate-pulse rounded-2xl bg-card" />
+        <div className="h-72 animate-pulse rounded-3xl bg-card" />
+        <div className="grid gap-6 xl:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-64 animate-pulse rounded-2xl bg-card" />
           ))}
         </div>
-        <div className="grid gap-6 xl:grid-cols-3">
-          <div className="h-80 animate-pulse rounded-2xl bg-card xl:col-span-2" />
-          <div className="h-80 animate-pulse rounded-2xl bg-card" />
+        <div className="grid gap-6 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-72 animate-pulse rounded-2xl bg-card" />
+          ))}
         </div>
-        <div className="h-72 animate-pulse rounded-2xl bg-card" />
         <div className="h-64 animate-pulse rounded-2xl bg-card" />
       </div>
     );
@@ -37,27 +36,17 @@ const Body = ({ tickets, isLoading, openTicket }: {
 
   return (
     <div className="space-y-6">
-      {/* Command center hero */}
-      <HealthHero metrics={metrics} />
+      {/* Zone 1 — Verdict */}
+      <VerdictHero summary={summary} trend={trend} />
 
-      {/* 5-column KPI strip */}
-      <MetricStrip metrics={metrics} />
+      {/* Zone 2 — Trends */}
+      <AssuranceTrends tickets={tickets} />
 
-      {/* Priority queue + live activity */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
-        <div className="xl:col-span-3">
-          <PriorityQueue tickets={tickets} onRowClick={openTicket} />
-        </div>
-        <div className="xl:col-span-2">
-          <ActivityFeed />
-        </div>
-      </div>
+      {/* Zone 3 — Attention + breakdowns */}
+      <AttentionPanel tickets={tickets} onOpen={openTicket} />
 
-      {/* Analytics charts row */}
-      <OverviewCharts tickets={tickets} />
-
-      {/* Recurring issues + agent leaderboard */}
-      <BottomGrid />
+      {/* Zone 4 — SLA detail */}
+      <SLABreakdownTable tickets={tickets} />
     </div>
   );
 };
