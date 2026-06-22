@@ -9,13 +9,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Clock, User, Send, Paperclip, StickyNote, ShieldAlert,
-  CheckCircle2, Lock, ArrowDownLeft, ArrowUpRight,
+  CheckCircle2, XCircle, Lock, ArrowDownLeft, ArrowUpRight, Timer,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, differenceInMinutes, parseISO, addHours, addMinutes } from "date-fns";
 import {
   requesterDisplayName, ticketDept, computeSLA,
   SLA_LABELS, SLA_ACK_MINUTES, SLA_ANALYSIS_MINUTES,
-  PRIORITY_META, STATUS_META, initials,
+  SLA_RESOLUTION_HOURS, SLA_DONE_STATUSES, SLA_PAUSED_STATUS,
+  PRIORITY_META, STATUS_META, initials, Priority,
 } from "@/lib/tickets";
 import { cn } from "@/lib/utils";
 
@@ -51,20 +52,229 @@ const avatarColor = (name: string) => {
   return colours[h % colours.length];
 };
 
+// ── SLA Tracker ──────────────────────────────────────────────────────────────
+
+type MilestoneStatus = "met" | "missed" | "pending" | "paused";
+
+interface Milestone {
+  label: string;
+  target: string;    // human label e.g. "15 minutes"
+  deadline: Date;
+  actual: Date | null;
+  status: MilestoneStatus;
+}
+
+const fmtDiff = (minutes: number): string => {
+  const abs = Math.abs(minutes);
+  const d = Math.floor(abs / (60 * 24));
+  const h = Math.floor((abs % (60 * 24)) / 60);
+  const m = abs % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+};
+
+const SLATracker = ({ ticket, conversations }: { ticket: Ticket; conversations: Conversation[] }) => {
+  const created = parseISO(ticket.created_at);
+  const isDone = SLA_DONE_STATUSES.includes(ticket.status);
+  const isPaused = ticket.status === SLA_PAUSED_STATUS;
+
+  // First agent reply (incoming=false, earliest)
+  const firstAgentReply = conversations
+    .filter((c) => !c.incoming)
+    .sort((a, b) => +parseISO(a.created_at) - +parseISO(b.created_at))[0] ?? null;
+  const firstReplyAt = firstAgentReply ? parseISO(firstAgentReply.created_at) : null;
+  const ackDeadline = addMinutes(created, SLA_ACK_MINUTES);
+  const analysisDeadline = addMinutes(created, SLA_ANALYSIS_MINUTES);
+  const resolutionHours = SLA_RESOLUTION_HOURS[ticket.priority as Priority] ?? SLA_RESOLUTION_HOURS[1];
+  const resolutionDeadline = addHours(created, resolutionHours);
+  const slaLabel = SLA_LABELS[ticket.priority as Priority] ?? SLA_LABELS[1];
+
+  const ackStatus = (): MilestoneStatus => {
+    if (!firstReplyAt) return isPaused ? "paused" : "pending";
+    return firstReplyAt <= ackDeadline ? "met" : "missed";
+  };
+
+  const analysisStatus = (): MilestoneStatus => {
+    if (!firstReplyAt) return isPaused ? "paused" : "pending";
+    return firstReplyAt <= analysisDeadline ? "met" : "missed";
+  };
+
+  const resolutionStatus = (): MilestoneStatus => {
+    if (isDone) return new Date() <= resolutionDeadline ? "met" : "missed";
+    if (isPaused) return "paused";
+    return new Date() > resolutionDeadline ? "missed" : "pending";
+  };
+
+  const milestones: Milestone[] = [
+    {
+      label: "Acknowledgment",
+      target: `${SLA_ACK_MINUTES} min`,
+      deadline: ackDeadline,
+      actual: firstReplyAt,
+      status: ackStatus(),
+    },
+    {
+      label: "Initial Analysis",
+      target: `${SLA_ANALYSIS_MINUTES} min`,
+      deadline: analysisDeadline,
+      actual: firstReplyAt,
+      status: analysisStatus(),
+    },
+    {
+      label: "Workaround",
+      target: slaLabel.workaround,
+      deadline: resolutionDeadline,
+      actual: isDone ? new Date() : null,
+      status: isDone ? "met" : isPaused ? "paused" : new Date() > resolutionDeadline ? "missed" : "pending",
+    },
+    {
+      label: "Full Resolution",
+      target: slaLabel.resolution,
+      deadline: resolutionDeadline,
+      actual: isDone ? new Date() : null,
+      status: resolutionStatus(),
+    },
+  ];
+
+  const overallSla = computeSLA(ticket);
+  const slaToneBox =
+    overallSla.state === "breached" ? "border-rose-200 bg-gradient-to-br from-rose-50 to-rose-50/30 dark:border-rose-500/20 dark:from-rose-500/10 dark:to-transparent" :
+    overallSla.state === "attention" ? "border-amber-200 bg-gradient-to-br from-amber-50 to-amber-50/30 dark:border-amber-500/20 dark:from-amber-500/10 dark:to-transparent" :
+    overallSla.state === "met" ? "border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-50/30 dark:border-emerald-500/20 dark:from-emerald-500/10 dark:to-transparent" :
+    "border-border/60 bg-gradient-to-br from-secondary/40 to-transparent";
+
+  const statusIcon = (s: MilestoneStatus) => {
+    if (s === "met") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
+    if (s === "missed") return <XCircle className="h-4 w-4 text-rose-500" />;
+    if (s === "paused") return <Timer className="h-4 w-4 text-violet-400" />;
+    return <Clock className="h-4 w-4 text-muted-foreground/50" />;
+  };
+
+  const statusBadge = (m: Milestone) => {
+    if (m.status === "met") {
+      const diffMin = differenceInMinutes(m.actual!, m.deadline);
+      // met early or on-time
+      const early = Math.abs(diffMin);
+      return (
+        <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+          Met {early > 0 ? `· ${fmtDiff(early)} early` : "on time"}
+        </span>
+      );
+    }
+    if (m.status === "missed") {
+      const now = m.actual ?? new Date();
+      const overMin = differenceInMinutes(now, m.deadline);
+      return (
+        <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+          Overdue · +{fmtDiff(overMin)}
+        </span>
+      );
+    }
+    if (m.status === "paused") {
+      return <span className="text-[11px] font-semibold text-violet-500">Paused</span>;
+    }
+    // pending
+    const rem = differenceInMinutes(m.deadline, new Date());
+    return (
+      <span className="text-[11px] font-medium text-muted-foreground">
+        {fmtDiff(rem)} left
+      </span>
+    );
+  };
+
+  const metCount = milestones.filter((m) => m.status === "met").length;
+  const missedCount = milestones.filter((m) => m.status === "missed").length;
+
+  return (
+    <div className={cn("rounded-2xl border p-4", slaToneBox)}>
+      {/* Header row */}
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className={cn("h-4 w-4", overallSla.tone)} />
+          <span className="text-[13px] font-bold text-foreground">{slaLabel.severity}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={cn("text-[12px] font-bold", overallSla.tone)}>
+            {overallSla.label}
+            {overallSla.state !== "met" && overallSla.state !== "paused" && ` · ${overallSla.remaining}`}
+          </span>
+          <span className="rounded-full bg-card/80 px-2 py-0.5 text-[10.5px] font-semibold text-muted-foreground">
+            {metCount}/{milestones.length} met
+          </span>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="mb-4 h-1.5 w-full overflow-hidden rounded-full bg-border/50">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all duration-500",
+            missedCount > 0 ? "bg-rose-500" : metCount === milestones.length ? "bg-emerald-500" : "bg-[#6B4EFF]"
+          )}
+          style={{ width: `${(metCount / milestones.length) * 100}%` }}
+        />
+      </div>
+
+      {/* Milestones */}
+      <div className="space-y-2">
+        {milestones.map((m, i) => (
+          <div
+            key={m.label}
+            className={cn(
+              "flex items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors",
+              m.status === "met" ? "border-emerald-200/70 bg-emerald-50/50 dark:border-emerald-500/15 dark:bg-emerald-500/5" :
+              m.status === "missed" ? "border-rose-200/70 bg-rose-50/50 dark:border-rose-500/15 dark:bg-rose-500/5" :
+              m.status === "paused" ? "border-violet-200/60 bg-violet-50/40 dark:border-violet-500/15 dark:bg-violet-500/5" :
+              "border-border/40 bg-card/50"
+            )}
+          >
+            {/* Step number + connector */}
+            <div className="flex shrink-0 flex-col items-center gap-0.5">
+              <div className={cn(
+                "flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold",
+                m.status === "met" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300" :
+                m.status === "missed" ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300" :
+                m.status === "paused" ? "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300" :
+                "bg-muted text-muted-foreground"
+              )}>
+                {i + 1}
+              </div>
+            </div>
+
+            {/* Icon */}
+            <div className="shrink-0">{statusIcon(m.status)}</div>
+
+            {/* Label + target */}
+            <div className="min-w-0 flex-1">
+              <div className="text-[12.5px] font-semibold text-foreground">{m.label}</div>
+              <div className="text-[11px] text-muted-foreground">Target: {m.target}</div>
+            </div>
+
+            {/* Status badge */}
+            <div className="shrink-0 text-right">
+              {statusBadge(m)}
+              {m.actual && m.status !== "pending" && (
+                <div className="text-[10px] text-muted-foreground/60">
+                  {format(m.actual, "MMM d, h:mm a")}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketDrawerProps) => {
   if (!ticket) return null;
 
-  const sla = computeSLA(ticket);
-  const slaLabel = SLA_LABELS[ticket.priority as Priority] ?? SLA_LABELS[1];
   const p = PRIORITY_META[ticket.priority] ?? { label: String(ticket.priority), tone: "bg-slate-100 text-slate-600", dot: "bg-slate-400" };
   const s = STATUS_META[ticket.status] ?? { label: `Status ${ticket.status}`, tone: "bg-slate-100 text-slate-600" };
   const requester = requesterDisplayName(ticket);
-
-  const slaToneBox =
-    sla.state === "breached" ? "border-rose-200 bg-gradient-to-br from-rose-50 to-rose-50/30 dark:border-rose-500/20 dark:from-rose-500/10 dark:to-transparent" :
-    sla.state === "attention" ? "border-amber-200 bg-gradient-to-br from-amber-50 to-amber-50/30 dark:border-amber-500/20 dark:from-amber-500/10 dark:to-transparent" :
-    sla.state === "met" ? "border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-50/30 dark:border-emerald-500/20 dark:from-emerald-500/10 dark:to-transparent" :
-    "border-border/60 bg-gradient-to-br from-secondary/40 to-transparent";
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
@@ -100,29 +310,8 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
         <ScrollArea className="flex-1">
           <div className="space-y-5 p-6">
 
-            {/* ── SLA panel ──────────────────────────────────────────── */}
-            <div className={cn("rounded-2xl border p-4", slaToneBox)}>
-              <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <ShieldAlert className={cn("h-4 w-4", sla.tone)} />
-                  <span className="text-[13px] font-bold text-foreground">{slaLabel.severity}</span>
-                </div>
-                <span className={cn("text-[12px] font-bold", sla.tone)}>{sla.label} · {sla.remaining}</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: "Acknowledgment", value: `${SLA_ACK_MINUTES} minutes` },
-                  { label: "Analysis", value: `${SLA_ANALYSIS_MINUTES} minutes` },
-                  { label: "Workaround", value: slaLabel.workaround },
-                  { label: "Full Resolution", value: slaLabel.resolution },
-                ].map((row) => (
-                  <div key={row.label} className="rounded-xl border border-border/40 bg-card/70 px-3 py-2">
-                    <div className="text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground/70">{row.label}</div>
-                    <div className="mt-0.5 text-[13px] font-semibold text-foreground">{row.value}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* ── SLA Milestone Tracker ──────────────────────────────── */}
+            <SLATracker ticket={ticket} conversations={conversations} />
 
             {/* ── Original description ────────────────────────────────── */}
             {ticket.description && (
