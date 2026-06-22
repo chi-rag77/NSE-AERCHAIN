@@ -22,7 +22,7 @@ export const AerchainWordmark = ({ className, height = 22, inverted = false }: P
   if (!imgFailed) {
     return (
       <img
-        src="/logos/aerchain-wordmark.png"
+        src="/logos/aerchain-wordmark.svg"
         alt="Aerchain"
         height={height}
         style={{ height, width: "auto", display: "block", ...(inverted ? { filter: "brightness(0) invert(1)" } : {}) }}
