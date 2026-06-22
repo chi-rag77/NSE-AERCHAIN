@@ -88,6 +88,7 @@ Deno.serve(async (req) => {
     } catch { /* non-fatal */ }
 
     // ── 3. Fetch NSE tickets (paginated, up to 10 pages × 100) ────────────
+    // include=stats gives fr_due_by, due_by, resolved_at, first_responded_at
     const baseFilter = `?include=requester,company,stats&company_id=${companyId}&per_page=100&order_by=updated_at&order_type=desc`;
 
     const allTickets: any[] = [];
@@ -102,6 +103,7 @@ Deno.serve(async (req) => {
       page++;
     }
 
+    const now = new Date().toISOString();
     const ticketRows = allTickets.map((t) => ({
       id: t.id,
       subject: t.subject ?? "",
@@ -113,12 +115,29 @@ Deno.serve(async (req) => {
       requester_id: t.requester_id ?? null,
       company_id: t.company_id ?? null,
       responder_id: t.responder_id ?? null,
-      tags: t.tags ?? [],
+      // Tags directly from Freshdesk
+      tags: Array.isArray(t.tags) ? t.tags : [],
+      // Freshdesk "Type" field (Query / Bug / Tech-Task / Service Task / …)
+      ticket_type: t.type ?? null,
+      // cf_module — functional area (PO / Invoice / GRN / PR / RFQ-QC / …)
+      module: t.custom_fields?.cf_module ?? null,
+      // cf_issue_type — "Sub Type - Module" (Slowness / Login / Integration / …)
+      sub_type: t.custom_fields?.cf_issue_type ?? null,
+      // SLA due dates from include=stats
+      fr_due_by: t.fr_due_by ?? null,
+      due_by: t.due_by ?? null,
+      fr_escalated: t.fr_escalated ?? false,
+      is_escalated: t.is_escalated ?? false,
+      spam: t.spam ?? false,
+      // Requester / agent names
       company_name: t.company?.name ?? "NSE",
-      requester_name: t.requester?.name ?? t.requester?.email ?? null,
+      requester_name: t.requester?.name ?? null,
+      requester_email: t.requester?.email ?? null,
       responder_name: t.responder_id ? (agentsMap[t.responder_id] ?? null) : null,
       sla_policy_id: t.sla_policy_id ?? null,
-      synced_at: new Date().toISOString(),
+      // Full custom_fields bag — preserve everything from Freshdesk
+      custom_fields: t.custom_fields ?? {},
+      synced_at: now,
     }));
 
     if (ticketRows.length) {

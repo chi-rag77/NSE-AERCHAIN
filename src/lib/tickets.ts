@@ -12,15 +12,21 @@ export const PRIORITY_META: Record<Priority, { label: string; tone: string; dot:
   4: { label: "Critical", tone: "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300", dot: "bg-rose-500" },
 };
 
+// Real NSE Freshdesk status codes (from /ticket_fields)
 export const STATUS_META: Record<number, { label: string; tone: string }> = {
   2: { label: "Open", tone: "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300" },
   3: { label: "Pending", tone: "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300" },
   4: { label: "Resolved", tone: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300" },
   5: { label: "Closed", tone: "bg-slate-100 text-slate-500 dark:bg-slate-500/10 dark:text-slate-300" },
-  6: { label: "Waiting", tone: "bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-300" },
-  7: { label: "In Progress", tone: "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300" },
-  8: { label: "On Hold", tone: "bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-300" },
+  7: { label: "On Tech", tone: "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300" },
+  8: { label: "Waiting on Customer", tone: "bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-300" },
+  9: { label: "On Product", tone: "bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-300" },
 };
+
+// Status 8 = Waiting on Customer → ball is in NSE's court, SLA timer paused.
+export const SLA_PAUSED_STATUS = 8;
+// Resolved / closed → SLA clock stopped (done).
+export const SLA_DONE_STATUSES = [4, 5];
 
 export const priorityLabel = (p: number) => PRIORITY_META[p as Priority]?.label ?? String(p);
 export const statusLabel = (s: number) => STATUS_META[s]?.label ?? "Unknown";
@@ -62,7 +68,7 @@ export const SLA_LABELS: Record<Priority, { severity: string; workaround: string
   1: { severity: "Severity 3 — Minor Error", workaround: "64 business hours", resolution: "15 business days" },
 };
 
-export type SLAState = "on_track" | "attention" | "breached" | "met";
+export type SLAState = "on_track" | "attention" | "breached" | "met" | "paused";
 
 export interface SLAInfo {
   state: SLAState;
@@ -78,8 +84,13 @@ export interface SLAInfo {
 
 export const computeSLA = (t: Ticket): SLAInfo => {
   // Resolved / closed tickets are considered met.
-  if (t.status === 4 || t.status === 5) {
+  if (SLA_DONE_STATUSES.includes(t.status)) {
     return { state: "met", label: "Met", remaining: "—", remainingMinutes: 0, percent: 100, tone: "text-emerald-600", dot: "bg-emerald-500" };
+  }
+
+  // Waiting on Customer → SLA timer is OFF; the ball is in NSE's court.
+  if (t.status === SLA_PAUSED_STATUS) {
+    return { state: "paused", label: "Paused — Waiting on NSE", remaining: "Paused", remainingMinutes: Infinity, percent: 100, tone: "text-violet-600 dark:text-violet-400", dot: "bg-violet-500" };
   }
 
   const created = parseISO(t.created_at);
@@ -102,6 +113,7 @@ export const computeSLA = (t: Ticket): SLAInfo => {
     attention: { label: "Attention", tone: "text-amber-600 dark:text-amber-400", dot: "bg-amber-500" },
     breached: { label: "Breached", tone: "text-rose-600 dark:text-rose-400", dot: "bg-rose-500" },
     met: { label: "Met", tone: "text-emerald-600", dot: "bg-emerald-500" },
+    paused: { label: "Paused — Waiting on NSE", tone: "text-violet-600 dark:text-violet-400", dot: "bg-violet-500" },
   };
 
   return { state, remaining, remainingMinutes, percent, ...meta[state] };
@@ -123,7 +135,8 @@ export const ticketDept = (t: Ticket): string => {
   return dept ? `NSE — ${dept}` : "NSE";
 };
 
-export const ticketCategory = (t: Ticket): string => t.tags[0] ?? "";
+export const ticketCategory = (t: Ticket): string =>
+  t.ticket_type ?? t.module ?? t.tags[0] ?? "";
 
 export const requesterDisplayName = (t: Ticket): string =>
   t.requester_name ? t.requester_name.replace(/\s*\([^)]*\)$/, "").trim() : "Unknown";

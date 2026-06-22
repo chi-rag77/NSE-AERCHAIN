@@ -51,10 +51,20 @@ export const fetchTickets = async (): Promise<Ticket[]> => {
     company_id: t.company_id ?? 0,
     responder_id: t.responder_id ?? null,
     tags: t.tags ?? [],
+    ticket_type: t.ticket_type ?? null,
+    module: t.module ?? null,
+    sub_type: t.sub_type ?? null,
+    fr_due_by: t.fr_due_by ?? null,
+    due_by: t.due_by ?? null,
+    fr_escalated: t.fr_escalated ?? false,
+    is_escalated: t.is_escalated ?? false,
+    spam: t.spam ?? false,
     company_name: t.company_name ?? undefined,
     requester_name: t.requester_name ?? undefined,
+    requester_email: t.requester_email ?? undefined,
     responder_name: t.responder_name ?? undefined,
     sla_policy_id: t.sla_policy_id ?? undefined,
+    custom_fields: t.custom_fields ?? {},
   }));
 };
 
