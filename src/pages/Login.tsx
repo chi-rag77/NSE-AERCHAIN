@@ -36,10 +36,7 @@ const Login = () => {
       <div className="relative hidden flex-col justify-between overflow-hidden bg-[#0F0F1A] p-12 text-white lg:flex">
         <div className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-[#6B4EFF] opacity-25 blur-[100px]" />
         <div className="pointer-events-none absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-[#E8341C] opacity-15 blur-[100px]" />
-        <div className="flex items-center gap-3">
-          <img src="/logos/aerchain.svg" alt="Aerchain" className="h-9 w-auto" />
-          <span className="text-[16px] font-black uppercase tracking-[0.16em]">Aerchain</span>
-        </div>
+        <img src="/logos/aerchain-wordmark.svg" alt="Aerchain" className="h-8 w-auto invert" />
         <div className="relative max-w-md">
           <ShieldCheck className="mb-5 h-9 w-9 text-[#8B74FF]" />
           <h1 className="font-display text-3xl font-bold leading-tight tracking-tight">
@@ -61,10 +58,7 @@ const Login = () => {
         <div className="w-full max-w-sm">
           {/* Mobile-only brand header */}
           <div className="mb-8 lg:hidden">
-            <div className="flex items-center gap-2">
-              <img src="/logos/aerchain.svg" alt="Aerchain" className="h-7 w-auto" />
-              <span className="text-[15px] font-black uppercase tracking-[0.14em]">Aerchain</span>
-            </div>
+            <img src="/logos/aerchain-wordmark.svg" alt="Aerchain" className="h-7 w-auto" />
           </div>
 
           {/* Partner logos */}
