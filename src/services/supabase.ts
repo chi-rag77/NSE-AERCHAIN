@@ -7,5 +7,11 @@ const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 export const isSupabaseConfigured = !!(URL && ANON);
 
 export const supabase: SupabaseClient | null = isSupabaseConfigured
-  ? createClient(URL!, ANON!, { auth: { persistSession: false } })
+  ? createClient(URL!, ANON!, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    })
   : null;
