@@ -52,9 +52,7 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
         {/* Left: brand + nav */}
         <div className="flex items-center gap-7">
           <Link to="/" className="flex shrink-0 items-center gap-2">
-            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" className="shrink-0">
-              <path d="M4 24L13 4L22 24M8 17H18" stroke="#E8341C" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <img src="/logos/aerchain.svg" alt="Aerchain" className="h-7 w-auto shrink-0" />
             <span className="hidden text-[15px] font-black uppercase tracking-[0.14em] text-[#1A1A2E] dark:text-white md:inline">
               Aerchain
             </span>
