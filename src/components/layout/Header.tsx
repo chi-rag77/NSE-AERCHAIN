@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { AerchainWordmark } from "@/components/AerchainWordmark";
 import { isUsingRealAPI } from "@/services/freshdesk";
 import { useAuth } from "@/auth/AuthProvider";
 import { initials } from "@/lib/tickets";
@@ -53,9 +54,9 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
         <div className="flex items-center gap-7">
           <Link to="/" className="flex shrink-0 items-center gap-2">
             {/* Mobile: icon only */}
-            <img src="/logos/aerchain.svg" alt="Aerchain" className="h-7 w-auto shrink-0 md:hidden" />
-            {/* Desktop: full wordmark */}
-            <img src="/logos/aerchain-wordmark.svg" alt="Aerchain" className="hidden h-7 w-auto shrink-0 md:block" />
+            <img src="/logos/aerchain.svg" alt="Aerchain" className="h-6 w-auto shrink-0 md:hidden" />
+            {/* Desktop: full wordmark as component */}
+            <AerchainWordmark height={20} className="hidden md:inline-flex" />
           </Link>
 
           <nav className="hidden md:block">
