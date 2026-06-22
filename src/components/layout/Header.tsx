@@ -1,5 +1,4 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
 import {
   Home, Ticket as TicketIcon, FileBarChart, Bell, Moon, Sun,
   RefreshCw, ShieldCheck, LogOut, Users, SlidersHorizontal, ScrollText,
@@ -40,41 +39,12 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
   const isActive = (path: string) =>
     path === "/admin/users" ? pathname.startsWith("/admin") : pathname === path;
 
-  const activeIndex = nav.findIndex((item) => isActive(item.path));
-  const idx = activeIndex >= 0 ? activeIndex : 0;
-
   const displayName = profile?.full_name || profile?.email || "User";
 
   const handleSignOut = async () => {
     await signOut();
     navigate("/login", { replace: true });
   };
-
-  // Neural-path geometry: measure the centre of each node so the connecting
-  // line can fill progressively up to the active node.
-  const navRef = useRef<HTMLDivElement>(null);
-  const nodeRefs = useRef<(HTMLSpanElement | null)[]>([]);
-  const [path, setPath] = useState<{ start: number; end: number; fill: number } | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => { setMounted(true); }, []);
-
-  useEffect(() => {
-    if (!mounted) return;
-    const measure = () => {
-      const container = navRef.current;
-      const first = nodeRefs.current[0];
-      const last = nodeRefs.current[nav.length - 1];
-      const active = nodeRefs.current[idx];
-      if (!container || !first || !last || !active) return;
-      const c = container.getBoundingClientRect();
-      const centre = (el: HTMLElement) => el.getBoundingClientRect().left - c.left + el.offsetWidth / 2;
-      setPath({ start: centre(first), end: centre(last), fill: centre(active) });
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [idx, mounted, nav.length]);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-[#E8E8F0] bg-white dark:border-border dark:bg-[#0F0F1A]">
@@ -91,93 +61,22 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
           </Link>
 
           <nav className="hidden md:block">
-            <div ref={navRef} className="relative flex items-center">
-              {/* Connecting track (muted, full span) */}
-              {path && mounted && (
-                <span
-                  aria-hidden
-                  className="dark:bg-border/70"
-                  style={{
-                    position: "absolute",
-                    top: "50%",
-                    left: path.start,
-                    width: Math.max(0, path.end - path.start),
-                    height: 2,
-                    transform: "translateY(-50%)",
-                    background: "#E2E2EE",
-                    borderRadius: 9999,
-                    zIndex: 0,
-                  }}
-                />
-              )}
-              {/* Animated progress fill up to the active node */}
-              {path && mounted && (
-                <span
-                  aria-hidden
-                  style={{
-                    position: "absolute",
-                    top: "50%",
-                    left: path.start,
-                    width: Math.max(0, path.fill - path.start),
-                    height: 2,
-                    transform: "translateY(-50%)",
-                    background: "linear-gradient(90deg, #6B4EFF 0%, #8B6FFF 100%)",
-                    borderRadius: 9999,
-                    boxShadow: "0 0 8px rgba(107,78,255,0.55)",
-                    transition: "width 0.5s cubic-bezier(0.65,0,0.35,1)",
-                    zIndex: 1,
-                  }}
-                />
-              )}
-
-              {nav.map((item, i) => {
+            <div className="flex items-center gap-0.5 rounded-full border border-[#E2E2EE] bg-[#F5F5FB] p-1 shadow-[0_1px_4px_rgba(0,0,0,0.06)] dark:border-border dark:bg-secondary/40">
+              {nav.map((item) => {
                 const active = isActive(item.path);
-                const passed = i <= idx; // nodes the workflow has reached
                 return (
                   <Link
                     key={item.path}
                     to={item.path}
-                    className="group relative z-10 flex flex-col items-center gap-1 px-4 py-1"
+                    className={cn(
+                      "group relative flex items-center gap-1.5 rounded-full px-3.5 py-[7px] text-[13px] font-medium transition-all duration-200",
+                      active
+                        ? "bg-[#6B4EFF] text-white shadow-[0_2px_12px_rgba(107,78,255,0.35)]"
+                        : "text-[#6B6B8A] hover:bg-white hover:text-[#1A1A2E] hover:shadow-[0_1px_4px_rgba(0,0,0,0.08)] dark:text-muted-foreground dark:hover:bg-secondary dark:hover:text-foreground"
+                    )}
                   >
-                    {/* Node */}
-                    <span
-                      ref={(el) => { nodeRefs.current[i] = el; }}
-                      className={cn(
-                        "relative flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 transition-all duration-300",
-                        active
-                          ? "border-[#6B4EFF] bg-[#6B4EFF]"
-                          : passed
-                          ? "border-[#6B4EFF] bg-white dark:bg-[#0F0F1A]"
-                          : "border-[#CFCFE2] bg-white group-hover:border-[#6B4EFF] dark:border-border dark:bg-[#0F0F1A]"
-                      )}
-                    >
-                      <item.icon
-                        className={cn(
-                          "h-[9px] w-[9px] shrink-0 transition-colors duration-300",
-                          active ? "text-white" : passed ? "text-[#6B4EFF]" : "text-[#9090A8] group-hover:text-[#6B4EFF] dark:text-muted-foreground"
-                        )}
-                      />
-                      {/* Pulse ring on active */}
-                      {active && (
-                        <span
-                          aria-hidden
-                          className="absolute inset-0 animate-ping rounded-full"
-                          style={{ background: "rgba(107,78,255,0.45)", animationDuration: "1.8s" }}
-                        />
-                      )}
-                    </span>
-
-                    {/* Label */}
-                    <span
-                      className={cn(
-                        "text-[11.5px] font-medium leading-none transition-colors duration-200",
-                        active
-                          ? "font-semibold text-[#1A1A2E] dark:text-white"
-                          : "text-[#6B6B8A] group-hover:text-[#1A1A2E] dark:text-muted-foreground dark:group-hover:text-foreground"
-                      )}
-                    >
-                      {item.label}
-                    </span>
+                    <item.icon className={cn("h-[14px] w-[14px] shrink-0", active ? "text-white" : "text-[#9090A8] group-hover:text-[#6B4EFF] dark:text-muted-foreground")} />
+                    <span>{item.label}</span>
                   </Link>
                 );
               })}
