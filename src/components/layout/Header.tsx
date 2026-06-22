@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
 import {
   Home, Ticket as TicketIcon, FileBarChart, Bell, Moon, Sun,
   RefreshCw, ShieldCheck, LogOut, Users, SlidersHorizontal, ScrollText,
@@ -39,12 +40,39 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
   const isActive = (path: string) =>
     path === "/admin/users" ? pathname.startsWith("/admin") : pathname === path;
 
+  const activeIndex = nav.findIndex((item) => isActive(item.path));
+
   const displayName = profile?.full_name || profile?.email || "User";
 
   const handleSignOut = async () => {
     await signOut();
     navigate("/login", { replace: true });
   };
+
+  // Liquid blob refs
+  const navRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLAnchorElement | null)[]>([]);
+  const [blob, setBlob] = useState<{ left: number; width: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const idx = activeIndex >= 0 ? activeIndex : 0;
+    const el = itemRefs.current[idx];
+    const container = navRef.current;
+    if (el && container) {
+      const containerRect = container.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      setBlob({
+        left: elRect.left - containerRect.left,
+        width: elRect.width,
+      });
+    }
+  }, [activeIndex, mounted, nav.length]);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-[#E8E8F0] bg-white dark:border-border dark:bg-[#0F0F1A]">
@@ -61,21 +89,53 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
           </Link>
 
           <nav className="hidden md:block">
-            <div className="flex items-center gap-0.5 rounded-full border border-[#E2E2EE] bg-[#F5F5FB] p-1 shadow-[0_1px_4px_rgba(0,0,0,0.06)] dark:border-border dark:bg-secondary/40">
-              {nav.map((item) => {
+            <div
+              ref={navRef}
+              className="relative flex items-center gap-0.5 rounded-full border border-[#E2E2EE] bg-[#F5F5FB] p-1 shadow-[0_1px_4px_rgba(0,0,0,0.06)] dark:border-border dark:bg-secondary/40"
+            >
+              {/* Liquid blob */}
+              {blob && mounted && (
+                <span
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    top: 4,
+                    bottom: 4,
+                    left: blob.left,
+                    width: blob.width,
+                    transition: "left 0.38s cubic-bezier(0.34,1.42,0.64,1), width 0.38s cubic-bezier(0.34,1.42,0.64,1)",
+                    borderRadius: 9999,
+                    background: "linear-gradient(135deg, #6B4EFF 0%, #8B6FFF 100%)",
+                    boxShadow: "0 2px 14px rgba(107,78,255,0.40), inset 0 1px 0 rgba(255,255,255,0.18)",
+                    backdropFilter: "blur(4px)",
+                    WebkitBackdropFilter: "blur(4px)",
+                    zIndex: 0,
+                  }}
+                />
+              )}
+
+              {nav.map((item, i) => {
                 const active = isActive(item.path);
                 return (
                   <Link
                     key={item.path}
                     to={item.path}
+                    ref={(el) => { itemRefs.current[i] = el; }}
                     className={cn(
-                      "group relative flex items-center gap-1.5 rounded-full px-3.5 py-[7px] text-[13px] font-medium transition-all duration-200",
+                      "group relative z-10 flex items-center gap-1.5 rounded-full px-3.5 py-[7px] text-[13px] font-medium transition-colors duration-150",
                       active
-                        ? "bg-[#6B4EFF] text-white shadow-[0_2px_12px_rgba(107,78,255,0.35)]"
-                        : "text-[#6B6B8A] hover:bg-white hover:text-[#1A1A2E] hover:shadow-[0_1px_4px_rgba(0,0,0,0.08)] dark:text-muted-foreground dark:hover:bg-secondary dark:hover:text-foreground"
+                        ? "text-white"
+                        : "text-[#6B6B8A] hover:text-[#1A1A2E] dark:text-muted-foreground dark:hover:text-foreground"
                     )}
                   >
-                    <item.icon className={cn("h-[14px] w-[14px] shrink-0", active ? "text-white" : "text-[#9090A8] group-hover:text-[#6B4EFF] dark:text-muted-foreground")} />
+                    <item.icon
+                      className={cn(
+                        "h-[14px] w-[14px] shrink-0 transition-all duration-300",
+                        active
+                          ? "text-white scale-110"
+                          : "text-[#9090A8] group-hover:text-[#6B4EFF] dark:text-muted-foreground"
+                      )}
+                    />
                     <span>{item.label}</span>
                   </Link>
                 );
