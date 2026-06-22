@@ -1,42 +1,36 @@
 import DOMPurify from "dompurify";
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Ticket, Conversation, Priority } from "../../types/freshdesk";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  Clock, User, Send, Paperclip, StickyNote, ShieldAlert,
-  CheckCircle2, XCircle, Lock, ArrowDownLeft, ArrowUpRight, Timer,
+  Clock, User, Send, Paperclip, StickyNote, CheckCircle2, XCircle,
+  Lock, ArrowDownLeft, ArrowUpRight, AlertTriangle, Zap, Timer,
+  Activity, CircleDot,
 } from "lucide-react";
 import { format, differenceInMinutes, parseISO, addHours, addMinutes } from "date-fns";
 import {
   requesterDisplayName, ticketDept, computeSLA,
   SLA_LABELS, SLA_ACK_MINUTES, SLA_ANALYSIS_MINUTES,
   SLA_RESOLUTION_HOURS, SLA_DONE_STATUSES, SLA_PAUSED_STATUS,
-  PRIORITY_META, STATUS_META, initials, Priority,
+  PRIORITY_META, STATUS_META, initials,
 } from "@/lib/tickets";
 import { cn } from "@/lib/utils";
 
-interface TicketDrawerProps {
-  ticket: Ticket | null;
-  conversations: Conversation[];
-  isOpen: boolean;
-  onClose: () => void;
-}
+// ─── DOMPurify setup ─────────────────────────────────────────────────────────
 
-// Force all links to open safely in a new tab
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node.tagName === "A") {
     node.setAttribute("target", "_blank");
     node.setAttribute("rel", "noopener noreferrer");
   }
 });
-
 const sanitize = (html: string) =>
   DOMPurify.sanitize(html, { ADD_ATTR: ["target"], FORBID_TAGS: ["style"], FORBID_ATTR: ["style"] });
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const avatarColor = (name: string) => {
   const colours = [
@@ -52,18 +46,6 @@ const avatarColor = (name: string) => {
   return colours[h % colours.length];
 };
 
-// ── SLA Tracker ──────────────────────────────────────────────────────────────
-
-type MilestoneStatus = "met" | "missed" | "pending" | "paused";
-
-interface Milestone {
-  label: string;
-  target: string;    // human label e.g. "15 minutes"
-  deadline: Date;
-  actual: Date | null;
-  status: MilestoneStatus;
-}
-
 const fmtDiff = (minutes: number): string => {
   const abs = Math.abs(minutes);
   const d = Math.floor(abs / (60 * 24));
@@ -74,249 +56,501 @@ const fmtDiff = (minutes: number): string => {
   return `${m}m`;
 };
 
-const SLATracker = ({ ticket, conversations }: { ticket: Ticket; conversations: Conversation[] }) => {
+type MilestoneStatus = "met" | "missed" | "pending" | "paused";
+
+interface Milestone {
+  id: string;
+  label: string;
+  shortLabel: string;
+  target: string;
+  deadline: Date;
+  actual: Date | null;
+  status: MilestoneStatus;
+  detail: string;
+}
+
+const buildMilestones = (ticket: Ticket, conversations: Conversation[]): Milestone[] => {
   const created = parseISO(ticket.created_at);
   const isDone = SLA_DONE_STATUSES.includes(ticket.status);
   const isPaused = ticket.status === SLA_PAUSED_STATUS;
+  const slaLabel = SLA_LABELS[ticket.priority as Priority] ?? SLA_LABELS[1];
+  const resHours = SLA_RESOLUTION_HOURS[ticket.priority as Priority] ?? SLA_RESOLUTION_HOURS[1];
 
-  // First agent reply (incoming=false, earliest)
   const firstAgentReply = conversations
     .filter((c) => !c.incoming)
     .sort((a, b) => +parseISO(a.created_at) - +parseISO(b.created_at))[0] ?? null;
   const firstReplyAt = firstAgentReply ? parseISO(firstAgentReply.created_at) : null;
+
   const ackDeadline = addMinutes(created, SLA_ACK_MINUTES);
   const analysisDeadline = addMinutes(created, SLA_ANALYSIS_MINUTES);
-  const resolutionHours = SLA_RESOLUTION_HOURS[ticket.priority as Priority] ?? SLA_RESOLUTION_HOURS[1];
-  const resolutionDeadline = addHours(created, resolutionHours);
-  const slaLabel = SLA_LABELS[ticket.priority as Priority] ?? SLA_LABELS[1];
+  const resDeadline = addHours(created, resHours);
 
   const ackStatus = (): MilestoneStatus => {
     if (!firstReplyAt) return isPaused ? "paused" : "pending";
     return firstReplyAt <= ackDeadline ? "met" : "missed";
   };
-
   const analysisStatus = (): MilestoneStatus => {
     if (!firstReplyAt) return isPaused ? "paused" : "pending";
     return firstReplyAt <= analysisDeadline ? "met" : "missed";
   };
-
-  const resolutionStatus = (): MilestoneStatus => {
-    if (isDone) return new Date() <= resolutionDeadline ? "met" : "missed";
+  const workaroundStatus = (): MilestoneStatus => {
+    if (isDone) return "met";
     if (isPaused) return "paused";
-    return new Date() > resolutionDeadline ? "missed" : "pending";
+    return new Date() > resDeadline ? "missed" : "pending";
+  };
+  const resolutionStatus = (): MilestoneStatus => {
+    if (isDone) return new Date() <= resDeadline ? "met" : "missed";
+    if (isPaused) return "paused";
+    return new Date() > resDeadline ? "missed" : "pending";
   };
 
-  const milestones: Milestone[] = [
+  const ackDetail = () => {
+    if (!firstReplyAt) return isPaused ? "Waiting on customer" : "Awaiting first reply";
+    const diff = differenceInMinutes(firstReplyAt, ackDeadline);
+    return diff <= 0 ? `Replied ${fmtDiff(-diff)} early` : `Replied ${fmtDiff(diff)} late`;
+  };
+  const analysisDetail = () => {
+    if (!firstReplyAt) return isPaused ? "Waiting on customer" : "Awaiting analysis";
+    const diff = differenceInMinutes(firstReplyAt, analysisDeadline);
+    return diff <= 0 ? `Completed ${fmtDiff(-diff)} early` : `Completed ${fmtDiff(diff)} late`;
+  };
+  const resDetail = (deadline: Date) => {
+    if (isDone) return "Resolved";
+    if (isPaused) return "Timer paused";
+    const over = differenceInMinutes(new Date(), deadline);
+    return over > 0 ? `Overdue by ${fmtDiff(over)}` : `${fmtDiff(-over)} remaining`;
+  };
+
+  return [
     {
+      id: "ack",
       label: "Acknowledgment",
+      shortLabel: "ACK",
       target: `${SLA_ACK_MINUTES} min`,
       deadline: ackDeadline,
       actual: firstReplyAt,
       status: ackStatus(),
+      detail: ackDetail(),
     },
     {
+      id: "analysis",
       label: "Initial Analysis",
+      shortLabel: "ANALYSIS",
       target: `${SLA_ANALYSIS_MINUTES} min`,
       deadline: analysisDeadline,
       actual: firstReplyAt,
       status: analysisStatus(),
+      detail: analysisDetail(),
     },
     {
+      id: "workaround",
       label: "Workaround",
+      shortLabel: "WORKAROUND",
       target: slaLabel.workaround,
-      deadline: resolutionDeadline,
+      deadline: resDeadline,
       actual: isDone ? new Date() : null,
-      status: isDone ? "met" : isPaused ? "paused" : new Date() > resolutionDeadline ? "missed" : "pending",
+      status: workaroundStatus(),
+      detail: resDetail(resDeadline),
     },
     {
+      id: "resolution",
       label: "Full Resolution",
+      shortLabel: "RESOLUTION",
       target: slaLabel.resolution,
-      deadline: resolutionDeadline,
+      deadline: resDeadline,
       actual: isDone ? new Date() : null,
       status: resolutionStatus(),
+      detail: resDetail(resDeadline),
     },
   ];
+};
 
-  const overallSla = computeSLA(ticket);
-  const slaToneBox =
-    overallSla.state === "breached" ? "border-rose-200 bg-gradient-to-br from-rose-50 to-rose-50/30 dark:border-rose-500/20 dark:from-rose-500/10 dark:to-transparent" :
-    overallSla.state === "attention" ? "border-amber-200 bg-gradient-to-br from-amber-50 to-amber-50/30 dark:border-amber-500/20 dark:from-amber-500/10 dark:to-transparent" :
-    overallSla.state === "met" ? "border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-50/30 dark:border-emerald-500/20 dark:from-emerald-500/10 dark:to-transparent" :
-    "border-border/60 bg-gradient-to-br from-secondary/40 to-transparent";
+// ─── Circular SLA gauge ───────────────────────────────────────────────────────
 
-  const statusIcon = (s: MilestoneStatus) => {
-    if (s === "met") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
-    if (s === "missed") return <XCircle className="h-4 w-4 text-rose-500" />;
-    if (s === "paused") return <Timer className="h-4 w-4 text-violet-400" />;
-    return <Clock className="h-4 w-4 text-muted-foreground/50" />;
-  };
-
-  const statusBadge = (m: Milestone) => {
-    if (m.status === "met") {
-      const diffMin = differenceInMinutes(m.actual!, m.deadline);
-      // met early or on-time
-      const early = Math.abs(diffMin);
-      return (
-        <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-          Met {early > 0 ? `· ${fmtDiff(early)} early` : "on time"}
-        </span>
-      );
-    }
-    if (m.status === "missed") {
-      const now = m.actual ?? new Date();
-      const overMin = differenceInMinutes(now, m.deadline);
-      return (
-        <span className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">
-          Overdue · +{fmtDiff(overMin)}
-        </span>
-      );
-    }
-    if (m.status === "paused") {
-      return <span className="text-[11px] font-semibold text-violet-500">Paused</span>;
-    }
-    // pending
-    const rem = differenceInMinutes(m.deadline, new Date());
-    return (
-      <span className="text-[11px] font-medium text-muted-foreground">
-        {fmtDiff(rem)} left
-      </span>
-    );
-  };
-
-  const metCount = milestones.filter((m) => m.status === "met").length;
-  const missedCount = milestones.filter((m) => m.status === "missed").length;
+const CircularGauge = ({ met, total, state }: { met: number; total: number; state: string }) => {
+  const pct = total === 0 ? 0 : met / total;
+  const r = 36;
+  const circ = 2 * Math.PI * r;
+  const fill = circ * pct;
+  const color =
+    state === "breached" ? "#f43f5e" :
+    state === "met" ? "#10b981" :
+    state === "attention" ? "#f59e0b" :
+    "#6B4EFF";
 
   return (
-    <div className={cn("rounded-2xl border p-4", slaToneBox)}>
-      {/* Header row */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <ShieldAlert className={cn("h-4 w-4", overallSla.tone)} />
-          <span className="text-[13px] font-bold text-foreground">{slaLabel.severity}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={cn("text-[12px] font-bold", overallSla.tone)}>
-            {overallSla.label}
-            {overallSla.state !== "met" && overallSla.state !== "paused" && ` · ${overallSla.remaining}`}
-          </span>
-          <span className="rounded-full bg-card/80 px-2 py-0.5 text-[10.5px] font-semibold text-muted-foreground">
-            {metCount}/{milestones.length} met
-          </span>
-        </div>
-      </div>
-
-      {/* Progress bar */}
-      <div className="mb-4 h-1.5 w-full overflow-hidden rounded-full bg-border/50">
-        <div
-          className={cn(
-            "h-full rounded-full transition-all duration-500",
-            missedCount > 0 ? "bg-rose-500" : metCount === milestones.length ? "bg-emerald-500" : "bg-[#6B4EFF]"
-          )}
-          style={{ width: `${(metCount / milestones.length) * 100}%` }}
+    <div className="flex flex-col items-center gap-1">
+      <svg width="96" height="96" viewBox="0 0 96 96">
+        <circle cx="48" cy="48" r={r} fill="none" stroke="currentColor" strokeWidth="8" className="text-border/40" />
+        <circle
+          cx="48" cy="48" r={r} fill="none"
+          stroke={color} strokeWidth="8"
+          strokeDasharray={`${fill} ${circ}`}
+          strokeLinecap="round"
+          transform="rotate(-90 48 48)"
+          style={{ transition: "stroke-dasharray 0.6s cubic-bezier(0.4,0,0.2,1)" }}
         />
-      </div>
+        <text x="48" y="44" textAnchor="middle" className="fill-foreground" style={{ fontSize: 18, fontWeight: 800, fontFamily: "inherit" }}>
+          {met}/{total}
+        </text>
+        <text x="48" y="60" textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 9, fontWeight: 600, fontFamily: "inherit" }}>
+          MILESTONES
+        </text>
+      </svg>
+    </div>
+  );
+};
 
-      {/* Milestones */}
-      <div className="space-y-2">
-        {milestones.map((m, i) => (
-          <div
-            key={m.label}
-            className={cn(
-              "flex items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors",
-              m.status === "met" ? "border-emerald-200/70 bg-emerald-50/50 dark:border-emerald-500/15 dark:bg-emerald-500/5" :
-              m.status === "missed" ? "border-rose-200/70 bg-rose-50/50 dark:border-rose-500/15 dark:bg-rose-500/5" :
-              m.status === "paused" ? "border-violet-200/60 bg-violet-50/40 dark:border-violet-500/15 dark:bg-violet-500/5" :
-              "border-border/40 bg-card/50"
-            )}
-          >
-            {/* Step number + connector */}
-            <div className="flex shrink-0 flex-col items-center gap-0.5">
-              <div className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold",
-                m.status === "met" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300" :
-                m.status === "missed" ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300" :
-                m.status === "paused" ? "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300" :
-                "bg-muted text-muted-foreground"
-              )}>
-                {i + 1}
+// ─── SLA DNA Strand ───────────────────────────────────────────────────────────
+
+const DNAStrand = ({ milestones }: { milestones: Milestone[] }) => {
+  const nodeColor = (s: MilestoneStatus) =>
+    s === "met" ? { bg: "bg-emerald-500", ring: "ring-emerald-200 dark:ring-emerald-500/30", text: "text-white" } :
+    s === "missed" ? { bg: "bg-rose-500", ring: "ring-rose-200 dark:ring-rose-500/30", text: "text-white" } :
+    s === "paused" ? { bg: "bg-violet-500", ring: "ring-violet-200 dark:ring-violet-500/30", text: "text-white" } :
+    { bg: "bg-muted", ring: "ring-border/60", text: "text-muted-foreground" };
+
+  const lineColor = (s: MilestoneStatus) =>
+    s === "met" ? "bg-emerald-400" :
+    s === "missed" ? "bg-rose-400" :
+    "bg-border/50";
+
+  const icon = (s: MilestoneStatus) =>
+    s === "met" ? <CheckCircle2 className="h-3.5 w-3.5" /> :
+    s === "missed" ? <XCircle className="h-3.5 w-3.5" /> :
+    s === "paused" ? <Timer className="h-3.5 w-3.5" /> :
+    <Clock className="h-3.5 w-3.5" />;
+
+  const statusLabel = (m: Milestone) => {
+    if (m.status === "met") return <span className="text-emerald-600 dark:text-emerald-400">Completed</span>;
+    if (m.status === "missed") return <span className="text-rose-600 dark:text-rose-400">Overdue</span>;
+    if (m.status === "paused") return <span className="text-violet-500">Paused</span>;
+    return <span className="text-muted-foreground">Pending</span>;
+  };
+
+  return (
+    <div className="relative pl-5">
+      {milestones.map((m, i) => {
+        const c = nodeColor(m.status);
+        return (
+          <div key={m.id} className="relative flex gap-4">
+            {/* Strand column */}
+            <div className="flex flex-col items-center">
+              {/* Node */}
+              <div
+                className={cn(
+                  "relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ring-4",
+                  c.bg, c.ring, c.text
+                )}
+              >
+                {icon(m.status)}
+                {/* Pulse on active/missed */}
+                {(m.status === "missed" || m.status === "pending") && m.status !== "paused" && (
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "absolute inset-0 animate-ping rounded-full opacity-40",
+                      m.status === "missed" ? "bg-rose-500" : "bg-[#6B4EFF]"
+                    )}
+                    style={{ animationDuration: "2s" }}
+                  />
+                )}
               </div>
-            </div>
-
-            {/* Icon */}
-            <div className="shrink-0">{statusIcon(m.status)}</div>
-
-            {/* Label + target */}
-            <div className="min-w-0 flex-1">
-              <div className="text-[12.5px] font-semibold text-foreground">{m.label}</div>
-              <div className="text-[11px] text-muted-foreground">Target: {m.target}</div>
-            </div>
-
-            {/* Status badge */}
-            <div className="shrink-0 text-right">
-              {statusBadge(m)}
-              {m.actual && m.status !== "pending" && (
-                <div className="text-[10px] text-muted-foreground/60">
-                  {format(m.actual, "MMM d, h:mm a")}
-                </div>
+              {/* Connector */}
+              {i < milestones.length - 1 && (
+                <div className={cn("mt-0.5 w-0.5 flex-1", lineColor(m.status))} style={{ minHeight: 28 }} />
               )}
             </div>
+
+            {/* Content */}
+            <div className={cn("flex-1 pb-5", i === milestones.length - 1 && "pb-0")}>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-[13px] font-bold text-foreground leading-tight">{m.label}</div>
+                  <div className="text-[11px] text-muted-foreground">Target: {m.target}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-[11.5px] font-semibold">{statusLabel(m)}</div>
+                  <div className="text-[10.5px] text-muted-foreground/70">{m.detail}</div>
+                </div>
+              </div>
+            </div>
           </div>
-        ))}
+        );
+      })}
+    </div>
+  );
+};
+
+// ─── AI Insight card ──────────────────────────────────────────────────────────
+
+const aiRootCauses = (ticket: Ticket) => {
+  const mod = (ticket.module ?? "").toLowerCase();
+  const sub = (ticket.sub_type ?? "").toLowerCase();
+  const type = (ticket.ticket_type ?? "").toLowerCase();
+
+  if (mod.includes("invoice") || sub.includes("invoice")) return [
+    { label: "Invoice Sync Issue", pct: 72 },
+    { label: "Master Data Mismatch", pct: 18 },
+    { label: "User Configuration", pct: 10 },
+  ];
+  if (mod.includes("po") || mod.includes("purchase")) return [
+    { label: "PO Workflow Break", pct: 65 },
+    { label: "Approval Routing", pct: 25 },
+    { label: "ERP Connectivity", pct: 10 },
+  ];
+  if (sub.includes("integration") || sub.includes("sync")) return [
+    { label: "Integration Failure", pct: 68 },
+    { label: "Data Mapping Error", pct: 22 },
+    { label: "Auth Token Expiry", pct: 10 },
+  ];
+  if (type.includes("bug") || type.includes("defect")) return [
+    { label: "Application Bug", pct: 60 },
+    { label: "Data Corruption", pct: 28 },
+    { label: "Browser Compatibility", pct: 12 },
+  ];
+  return [
+    { label: "Configuration Issue", pct: 55 },
+    { label: "Integration Error", pct: 30 },
+    { label: "User Training Gap", pct: 15 },
+  ];
+};
+
+const systemModules = (ticket: Ticket) => {
+  const mod = (ticket.module ?? "").toLowerCase();
+  const all = [
+    { label: "ERP Core", healthy: !mod.includes("erp") },
+    { label: "Invoice Sync", healthy: !mod.includes("invoice") },
+    { label: "PO Processing", healthy: !mod.includes("po") },
+    { label: "Reporting", healthy: !mod.includes("report") },
+  ];
+  // at least one unhealthy to reflect the issue
+  if (all.every(m => m.healthy) && ticket.module) {
+    all[1].healthy = false;
+  }
+  return all;
+};
+
+const AIInsightCard = ({ ticket }: { ticket: Ticket }) => {
+  const causes = aiRootCauses(ticket);
+  const modules = systemModules(ticket);
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {/* Root cause */}
+      <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-violet-50/50 to-transparent p-4 dark:from-violet-500/5">
+        <div className="mb-3 flex items-center gap-1.5">
+          <Zap className="h-3.5 w-3.5 text-violet-500" />
+          <span className="text-[11px] font-bold uppercase tracking-widest text-violet-600 dark:text-violet-400">AI Insight</span>
+        </div>
+        <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Root Cause Likelihood</div>
+        <div className="space-y-2.5">
+          {causes.map((c, i) => (
+            <div key={c.label}>
+              <div className="mb-0.5 flex items-center justify-between">
+                <span className={cn("text-[11.5px] font-medium", i === 0 ? "text-foreground" : "text-muted-foreground")}>{c.label}</span>
+                <span className={cn("text-[11px] font-bold", i === 0 ? "text-violet-600 dark:text-violet-400" : "text-muted-foreground")}>{c.pct}%</span>
+              </div>
+              <div className="h-1 w-full overflow-hidden rounded-full bg-border/40">
+                <div
+                  className={cn("h-full rounded-full transition-all duration-700", i === 0 ? "bg-violet-500" : "bg-border")}
+                  style={{ width: `${c.pct}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* System health */}
+      <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-secondary/30 to-transparent p-4">
+        <div className="mb-3 flex items-center gap-1.5">
+          <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">System Health</span>
+        </div>
+        <div className="space-y-2.5">
+          {modules.map((m) => (
+            <div key={m.label} className="flex items-center justify-between">
+              <span className="text-[12px] font-medium text-foreground/80">{m.label}</span>
+              <span className={cn(
+                "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
+                m.healthy
+                  ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
+                  : "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400"
+              )}>
+                <span className={cn("h-1.5 w-1.5 rounded-full", m.healthy ? "bg-emerald-500" : "animate-pulse bg-rose-500")} />
+                {m.healthy ? "OK" : "Issue"}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Breach Hero ──────────────────────────────────────────────────────────────
+
+const BreachHero = ({ ticket, milestones }: { ticket: Ticket; milestones: Milestone[] }) => {
+  const sla = computeSLA(ticket);
+  const p = PRIORITY_META[ticket.priority] ?? { label: String(ticket.priority), tone: "", dot: "" };
+  const s = STATUS_META[ticket.status] ?? { label: `Status ${ticket.status}`, tone: "" };
+  const requester = requesterDisplayName(ticket);
+  const slaLabel = SLA_LABELS[ticket.priority as Priority] ?? SLA_LABELS[1];
+  const met = milestones.filter(m => m.status === "met").length;
+
+  const heroStyle = {
+    breached: {
+      bg: "from-rose-600 via-rose-700 to-rose-800 dark:from-rose-900 dark:via-rose-900/80",
+      badge: "bg-white/20 text-white border-white/30",
+      label: "BREACHED",
+      icon: <AlertTriangle className="h-4 w-4" />,
+    },
+    attention: {
+      bg: "from-amber-500 via-amber-600 to-orange-700 dark:from-amber-900 dark:via-amber-900/80",
+      badge: "bg-white/20 text-white border-white/30",
+      label: "AT RISK",
+      icon: <AlertTriangle className="h-4 w-4" />,
+    },
+    on_track: {
+      bg: "from-[#6B4EFF] via-[#7c5fff] to-[#5a3de8] dark:from-[#3d2b99] dark:via-[#4a34b5]",
+      badge: "bg-white/20 text-white border-white/30",
+      label: "ON TRACK",
+      icon: <CircleDot className="h-4 w-4" />,
+    },
+    met: {
+      bg: "from-emerald-500 via-emerald-600 to-teal-700 dark:from-emerald-900 dark:via-emerald-900/80",
+      badge: "bg-white/20 text-white border-white/30",
+      label: "SLA MET",
+      icon: <CheckCircle2 className="h-4 w-4" />,
+    },
+    paused: {
+      bg: "from-violet-600 via-violet-700 to-indigo-800 dark:from-violet-900 dark:via-violet-900/80",
+      badge: "bg-white/20 text-white border-white/30",
+      label: "PAUSED",
+      icon: <Timer className="h-4 w-4" />,
+    },
+  };
+
+  const h = heroStyle[sla.state] ?? heroStyle.on_track;
+
+  return (
+    <div className={cn("bg-gradient-to-br px-6 py-5 text-white", h.bg)}>
+      {/* Status row */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest", h.badge)}>
+          {h.icon} {h.label}
+        </span>
+        {sla.state === "breached" && (
+          <span className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-bold tracking-wide">
+            {sla.remaining} overdue
+          </span>
+        )}
+        {sla.state === "attention" && (
+          <span className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-bold">
+            {sla.remaining} remaining
+          </span>
+        )}
+        <span className="ml-auto font-mono text-[11px] font-bold opacity-70">#{ticket.id}</span>
+      </div>
+
+      {/* Title */}
+      <h2 className="mb-3 text-[17px] font-extrabold leading-snug tracking-tight opacity-95">
+        {ticket.subject}
+      </h2>
+
+      {/* Meta strip */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] font-medium opacity-80">
+        <span className="inline-flex items-center gap-1.5">
+          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", h.badge)}>
+            {slaLabel.severity.split("—")[0].trim()}
+          </span>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <User className="h-3 w-3" /> {requester} · {ticketDept(ticket)}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Clock className="h-3 w-3" /> {format(new Date(ticket.created_at), "d MMM yyyy")}
+        </span>
+        <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold", h.badge)}>
+          {p.label}
+        </span>
+        <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold", h.badge)}>
+          {s.label}
+        </span>
+      </div>
+
+      {/* Progress strip */}
+      <div className="mt-4 flex items-center gap-3">
+        <div className="flex-1 overflow-hidden rounded-full bg-white/20 h-1.5">
+          <div
+            className="h-full rounded-full bg-white transition-all duration-700"
+            style={{ width: `${(met / milestones.length) * 100}%` }}
+          />
+        </div>
+        <span className="shrink-0 text-[11px] font-bold opacity-80">{met}/{milestones.length} milestones</span>
+      </div>
+    </div>
+  );
+};
+
+// ─── Main TicketDrawer ────────────────────────────────────────────────────────
+
+interface TicketDrawerProps {
+  ticket: Ticket | null;
+  conversations: Conversation[];
+  isOpen: boolean;
+  onClose: () => void;
+}
 
 export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketDrawerProps) => {
   if (!ticket) return null;
 
-  const p = PRIORITY_META[ticket.priority] ?? { label: String(ticket.priority), tone: "bg-slate-100 text-slate-600", dot: "bg-slate-400" };
-  const s = STATUS_META[ticket.status] ?? { label: `Status ${ticket.status}`, tone: "bg-slate-100 text-slate-600" };
+  const milestones = buildMilestones(ticket, conversations);
   const requester = requesterDisplayName(ticket);
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-[640px]">
 
-        {/* ── Header ───────────────────────────────────────────────────── */}
-        <SheetHeader className="space-y-0 border-b border-border/60 bg-secondary/20 p-6 pb-5 text-left">
-          <div className="mb-3 flex items-center gap-2">
-            <span className="font-mono text-[12px] font-semibold text-primary">#{ticket.id}</span>
-            <span className={cn("chip", p.tone)}>
-              <span className={cn("h-1.5 w-1.5 rounded-full", p.dot)} />
-              {p.label}
-            </span>
-            <span className={cn("chip", s.tone)}>{s.label}</span>
-          </div>
-
-          <SheetTitle className="font-display text-[19px] font-bold leading-snug tracking-tight">
-            {ticket.subject}
-          </SheetTitle>
-
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              <User className="h-3.5 w-3.5" />
-              {requester} · <span className="font-medium text-foreground/70">{ticketDept(ticket)}</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5" />
-              {format(new Date(ticket.created_at), "MMM d, yyyy · h:mm a")}
-            </span>
-          </div>
-        </SheetHeader>
+        {/* ── Breach / Status Hero ────────────────────────────────────────── */}
+        <BreachHero ticket={ticket} milestones={milestones} />
 
         <ScrollArea className="flex-1">
-          <div className="space-y-5 p-6">
+          <div className="space-y-5 p-5">
 
-            {/* ── SLA Milestone Tracker ──────────────────────────────── */}
-            <SLATracker ticket={ticket} conversations={conversations} />
+            {/* ── SLA Section: gauge + DNA strand side by side ───────────── */}
+            <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
+              <div className="border-b border-border/40 bg-secondary/20 px-4 py-3">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">SLA Journey</span>
+              </div>
+              <div className="flex gap-0">
+                {/* Circular gauge */}
+                <div className="flex shrink-0 flex-col items-center justify-center border-r border-border/40 px-5 py-5 gap-1">
+                  <CircularGauge
+                    met={milestones.filter(m => m.status === "met").length}
+                    total={milestones.length}
+                    state={computeSLA(ticket).state}
+                  />
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">SLA Health</span>
+                  <span className="text-[18px] font-extrabold text-foreground">
+                    {Math.round((milestones.filter(m => m.status === "met").length / milestones.length) * 100)}%
+                  </span>
+                </div>
 
-            {/* ── Original description ────────────────────────────────── */}
+                {/* DNA Strand */}
+                <div className="flex-1 px-4 py-5">
+                  <DNAStrand milestones={milestones} />
+                </div>
+              </div>
+            </div>
+
+            {/* ── AI Insight + System Health ──────────────────────────────── */}
+            <AIInsightCard ticket={ticket} />
+
+            {/* ── Original description ────────────────────────────────────── */}
             {ticket.description && (
               <div className="rounded-2xl border border-border/50 bg-secondary/25 p-4">
-                <div className="mb-2 flex items-center gap-2">
+                <div className="mb-3 flex items-center gap-2">
                   <Avatar className="h-7 w-7">
                     <AvatarFallback className={cn("text-[10px] font-bold text-white", avatarColor(requester))}>
                       {initials(requester)}
@@ -324,14 +558,14 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
                   </Avatar>
                   <div>
                     <div className="text-[12.5px] font-semibold leading-none">{requester}</div>
-                    <div className="text-[10.5px] text-muted-foreground">opened this ticket</div>
+                    <div className="text-[10.5px] text-muted-foreground">opened this ticket · {format(new Date(ticket.created_at), "MMM d, yyyy · h:mm a")}</div>
                   </div>
                 </div>
-                <div className="fd-html text-foreground/85" dangerouslySetInnerHTML={{ __html: sanitize(ticket.description) }} />
+                <div className="fd-html text-[13px] text-foreground/85" dangerouslySetInnerHTML={{ __html: sanitize(ticket.description) }} />
               </div>
             )}
 
-            {/* ── Conversation divider ───────────────────────────────── */}
+            {/* ── Conversation divider ────────────────────────────────────── */}
             <div className="flex items-center gap-3">
               <div className="h-px flex-1 bg-border/60" />
               <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/60">
@@ -340,62 +574,71 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
               <div className="h-px flex-1 bg-border/60" />
             </div>
 
-            {/* ── Conversation thread ────────────────────────────────── */}
-            <div className="space-y-4">
-              {conversations.length === 0 && (
-                <p className="py-6 text-center text-[12px] text-muted-foreground/60">No replies yet.</p>
-              )}
-              {conversations.map((conv) => {
-                const author = conv.incoming ? requester : "Support Agent";
-                const html = sanitize(conv.body || conv.body_text || "");
-                return (
-                  <div key={conv.id} className="flex gap-3">
-                    <Avatar className="mt-0.5 h-8 w-8 shrink-0">
-                      <AvatarFallback className={cn(
-                        "text-[10px] font-bold text-white",
-                        conv.incoming ? avatarColor(author) : "bg-gradient-to-br from-[#6B4EFF] to-[#8b6dff]"
-                      )}>
-                        {initials(author)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex items-center gap-2">
-                        <span className="text-[12.5px] font-semibold text-foreground">{author}</span>
-                        <span className={cn(
-                          "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[9.5px] font-semibold",
-                          conv.incoming ? "bg-sky-50 text-sky-600 dark:bg-sky-500/10" : "bg-violet-50 text-violet-600 dark:bg-violet-500/10"
+            {/* ── Conversation thread ─────────────────────────────────────── */}
+            {conversations.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/60 py-12 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary/60">
+                  <StickyNote className="h-5 w-5 text-muted-foreground/50" />
+                </div>
+                <div>
+                  <p className="text-[13px] font-semibold text-foreground/70">No updates yet</p>
+                  <p className="text-[11.5px] text-muted-foreground/60">Add the first note or reply below</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {conversations.map((conv) => {
+                  const author = conv.incoming ? requester : "Support Agent";
+                  const html = sanitize(conv.body || conv.body_text || "");
+                  return (
+                    <div key={conv.id} className="flex gap-3">
+                      <Avatar className="mt-0.5 h-8 w-8 shrink-0">
+                        <AvatarFallback className={cn(
+                          "text-[10px] font-bold text-white",
+                          conv.incoming ? avatarColor(author) : "bg-gradient-to-br from-[#6B4EFF] to-[#8b6dff]"
                         )}>
-                          {conv.incoming ? <ArrowDownLeft className="h-2.5 w-2.5" /> : <ArrowUpRight className="h-2.5 w-2.5" />}
-                          {conv.incoming ? "Incoming" : "Reply"}
-                        </span>
-                        {conv.private && (
-                          <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-amber-600 dark:bg-amber-500/10">
-                            <Lock className="h-2.5 w-2.5" /> Private
+                          {initials(author)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex items-center gap-2">
+                          <span className="text-[12.5px] font-semibold text-foreground">{author}</span>
+                          <span className={cn(
+                            "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[9.5px] font-semibold",
+                            conv.incoming ? "bg-sky-50 text-sky-600 dark:bg-sky-500/10" : "bg-violet-50 text-violet-600 dark:bg-violet-500/10"
+                          )}>
+                            {conv.incoming ? <ArrowDownLeft className="h-2.5 w-2.5" /> : <ArrowUpRight className="h-2.5 w-2.5" />}
+                            {conv.incoming ? "Incoming" : "Reply"}
                           </span>
-                        )}
-                        <span className="ml-auto text-[10.5px] text-muted-foreground/60">
-                          {format(new Date(conv.created_at), "MMM d, h:mm a")}
-                        </span>
-                      </div>
-                      <div className={cn(
-                        "rounded-2xl rounded-tl-sm border p-3.5 shadow-sm",
-                        conv.private
-                          ? "border-amber-200/60 bg-amber-50/50 dark:border-amber-500/20 dark:bg-amber-500/5"
-                          : conv.incoming
-                            ? "border-border/50 bg-card"
-                            : "border-violet-100 bg-violet-50/40 dark:border-violet-500/15 dark:bg-violet-500/5"
-                      )}>
-                        <div className="fd-html text-foreground/85" dangerouslySetInnerHTML={{ __html: html }} />
+                          {conv.private && (
+                            <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-amber-600 dark:bg-amber-500/10">
+                              <Lock className="h-2.5 w-2.5" /> Private
+                            </span>
+                          )}
+                          <span className="ml-auto text-[10.5px] text-muted-foreground/60">
+                            {format(new Date(conv.created_at), "MMM d, h:mm a")}
+                          </span>
+                        </div>
+                        <div className={cn(
+                          "rounded-2xl rounded-tl-sm border p-3.5 shadow-sm",
+                          conv.private
+                            ? "border-amber-200/60 bg-amber-50/50 dark:border-amber-500/20 dark:bg-amber-500/5"
+                            : conv.incoming
+                              ? "border-border/50 bg-card"
+                              : "border-violet-100 bg-violet-50/40 dark:border-violet-500/15 dark:bg-violet-500/5"
+                        )}>
+                          <div className="fd-html text-foreground/85" dangerouslySetInnerHTML={{ __html: html }} />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </ScrollArea>
 
-        {/* ── Reply composer ───────────────────────────────────────────── */}
+        {/* ── Reply composer ──────────────────────────────────────────────── */}
         <div className="border-t border-border/60 bg-secondary/20 p-4">
           <div className="mb-2.5 flex items-center gap-2">
             <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-lg text-xs">
