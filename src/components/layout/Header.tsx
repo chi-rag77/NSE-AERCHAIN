@@ -52,10 +52,10 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
         {/* Left: brand + nav */}
         <div className="flex items-center gap-7">
           <Link to="/" className="flex shrink-0 items-center gap-2">
-            <img src="/logos/aerchain.svg" alt="Aerchain" className="h-7 w-auto shrink-0" />
-            <span className="hidden text-[15px] font-black uppercase tracking-[0.14em] text-[#1A1A2E] dark:text-white md:inline">
-              Aerchain
-            </span>
+            {/* Mobile: icon only */}
+            <img src="/logos/aerchain.svg" alt="Aerchain" className="h-7 w-auto shrink-0 md:hidden" />
+            {/* Desktop: full wordmark */}
+            <img src="/logos/aerchain-wordmark.svg" alt="Aerchain" className="hidden h-7 w-auto shrink-0 md:block" />
           </Link>
 
           <nav className="hidden md:block">
