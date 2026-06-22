@@ -1,60 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 88" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 180" fill="none" role="img" aria-label="Aerchain">
   <!--
-    Aerchain wordmark: "AERCH" + orange Ai glyph + "N"
-    Dark colour: #1A1A1A  Orange: #E8431C
-    Font approximation: geometric bold sans (Futura / Century Gothic stack)
+    Aerchain wordmark — vector recreation.
+    Black letters: A E R C H  …  N   (#1C1C1C)
+    Orange calligraphic "ai" ribbon + i-dot (#F05A2A)
   -->
 
-  <!-- ── "AERCH" ─────────────────────────────────────────────────── -->
-  <text
-    x="0" y="70"
-    font-family="'Futura','Century Gothic','Trebuchet MS','Arial Black',sans-serif"
-    font-weight="800"
-    font-size="74"
-    fill="#1A1A1A"
-    letter-spacing="-1"
-  >AERCH</text>
+  <g stroke="#1C1C1C" stroke-width="29" fill="none" stroke-linecap="butt">
+    <!-- A (sharp apex) -->
+    <path d="M16 158 L78 24 L140 158" stroke-linejoin="miter" />
+    <path d="M44 112 H112" />
 
-  <!-- ── Orange stylised "Ai" ──────────────────────────────────────
-       The "A" is an open rounded-stroke A (left side curves from
-       bottom-left, arcs over apex, right side comes down and stops
-       open, leaving a gap at bottom-right).  A horizontal crossbar
-       sits ~45% up.  The "i" dot is a circle to the right.
-  ──────────────────────────────────────────────────────────────── -->
+    <!-- E -->
+    <path d="M286 24 H190 V158 H286" stroke-linejoin="miter" />
+    <path d="M190 91 H266" />
 
-  <!-- A stroke: open rounded form, stroke-based, thick rounded caps -->
-  <path
-    d="M 340 74
-       C 335 74  328 70  326 62
-       L 315 22
-       C 312 12  318  4  328  4
-       C 338  4  345 12  348 22
-       L 366 64
-       C 369 72  375 76  383 74"
-    stroke="#E8431C"
-    stroke-width="11"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    fill="none"
-  />
-  <!-- A crossbar -->
-  <line
-    x1="320" y1="46"
-    x2="375" y2="46"
-    stroke="#E8431C"
-    stroke-width="11"
-    stroke-linecap="round"
-  />
-  <!-- i dot -->
-  <circle cx="400" cy="14" r="8" fill="#E8431C"/>
+    <!-- R -->
+    <path d="M334 158 V24 H392 A34 34 0 0 1 392 92 H334" stroke-linejoin="miter" />
+    <path d="M372 92 L436 158" stroke-linecap="round" />
 
-  <!-- ── "N" ───────────────────────────────────────────────────────── -->
-  <text
-    x="410" y="70"
-    font-family="'Futura','Century Gothic','Trebuchet MS','Arial Black',sans-serif"
-    font-weight="800"
-    font-size="74"
-    fill="#1A1A1A"
-    letter-spacing="-1"
-  >N</text>
+    <!-- C (open right) -->
+    <path d="M604 56 A62 62 0 1 0 604 126" stroke-linecap="round" />
+
+    <!-- H -->
+    <path d="M648 24 V158" />
+    <path d="M776 24 V158" />
+    <path d="M648 91 H776" />
+
+    <!-- N -->
+    <path d="M976 158 V24 L1086 158 V24" stroke-linejoin="miter" />
+  </g>
+
+  <!-- ── Orange calligraphic "ai" ─────────────────────────────── -->
+  <g fill="#F05A2A">
+    <!-- the "a" bowl + sweeping ascender, drawn as a filled ribbon -->
+    <path d="M905 24
+             C 879 24 866 44 862 70
+             C 851 58 833 52 816 56
+             C 786 63 802 99 824 96
+             C 808 112 804 138 824 152
+             C 848 169 887 156 898 124
+             C 904 138 916 146 928 142
+             C 944 137 940 116 924 116
+             C 922 90 922 56 930 38
+             C 936 26 924 22 916 28
+             C 912 24 909 24 905 24 Z
+             M 866 96
+             C 866 82 878 74 890 76
+             C 901 78 904 92 900 104
+             C 896 118 882 122 872 116
+             C 865 111 864 104 866 96 Z" fill-rule="evenodd" />
+    <!-- i dot -->
+    <circle cx="938" cy="42" r="15" />
+  </g>
 </svg>
