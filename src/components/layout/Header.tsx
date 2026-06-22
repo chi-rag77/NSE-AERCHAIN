@@ -55,7 +55,7 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
           <Link to="/" className="flex shrink-0 items-center gap-2">
             {/* Mobile: icon only */}
             <img src="/logos/aerchain.svg" alt="Aerchain" className="h-6 w-auto shrink-0 md:hidden" />
-            {/* Desktop: full wordmark as component */}
+            {/* Desktop: full wordmark image — place aerchain-wordmark.png in public/logos/ */}
             <AerchainWordmark height={20} className="hidden md:inline-flex" />
           </Link>
 
