@@ -47,6 +47,9 @@ export const statusLabel = (s: number) => STATUS_META[s]?.label ?? "Unknown";
 // Calendar-hour equivalents of the business-hour SLA targets
 const BIZ_TO_CAL = (bizHours: number) => Math.round((bizHours / 9) * 24);
 
+// NOTE: these are mutable so admin-configured SLA rules (loaded from the
+// `sla_rules` table at runtime) can override the defaults in place. Consumers
+// read them at call-time, so applySlaRules() takes effect on the next render.
 export const SLA_RESOLUTION_HOURS: Record<Priority, number> = {
   4: BIZ_TO_CAL(8),    // Severity 1 — Critical: 8 biz hrs ≈ 21 cal hrs
   3: BIZ_TO_CAL(32),   // Severity 2 — High:     32 biz hrs ≈ 85 cal hrs
@@ -66,6 +69,28 @@ export const SLA_LABELS: Record<Priority, { severity: string; workaround: string
   3: { severity: "Severity 2 — System Defect", workaround: "16 business hours", resolution: "32 business hours" },
   2: { severity: "Severity 3 — Minor Error", workaround: "64 business hours", resolution: "15 business days" },
   1: { severity: "Severity 3 — Minor Error", workaround: "64 business hours", resolution: "15 business days" },
+};
+
+/** Shape of an admin-configured SLA rule row from the `sla_rules` table. */
+export interface SlaRule {
+  priority: Priority;
+  severity_label: string;
+  resolution_hours: number;
+  resolution_label?: string | null;
+}
+
+/** Apply admin-configured rules in place so the whole app picks them up. */
+export const applySlaRules = (rules: SlaRule[]) => {
+  rules.forEach((r) => {
+    const p = r.priority as Priority;
+    if (![1, 2, 3, 4].includes(p)) return;
+    SLA_RESOLUTION_HOURS[p] = r.resolution_hours;
+    SLA_LABELS[p] = {
+      severity: r.severity_label,
+      workaround: SLA_LABELS[p]?.workaround ?? "",
+      resolution: r.resolution_label ?? SLA_LABELS[p]?.resolution ?? "",
+    };
+  });
 };
 
 export type SLAState = "on_track" | "attention" | "breached" | "met" | "paused";

@@ -4,13 +4,23 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { lazy, Suspense } from "react";
+import { AuthProvider } from "./auth/AuthProvider";
+import { ProtectedRoute, AdminRoute } from "./auth/guards";
+import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Tickets from "./pages/Tickets";
 import NotFound from "./pages/NotFound";
 
 const Reports = lazy(() => import("./pages/Reports"));
+const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
+const AdminSLA = lazy(() => import("./pages/admin/AdminSLA"));
+const AdminLogs = lazy(() => import("./pages/admin/AdminLogs"));
 
 const queryClient = new QueryClient();
+
+const Loading = ({ label }: { label: string }) => (
+  <div className="grid h-screen place-items-center text-sm text-muted-foreground">{label}</div>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -18,19 +28,38 @@ const App = () => (
       <Toaster />
       <Sonner position="top-right" />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/tickets" element={<Tickets />} />
-          <Route
-            path="/reports"
-            element={
-              <Suspense fallback={<div className="grid h-screen place-items-center text-sm text-muted-foreground">Loading reports…</div>}>
-                <Reports />
-              </Suspense>
-            }
-          />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+
+            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/tickets" element={<ProtectedRoute><Tickets /></ProtectedRoute>} />
+            <Route
+              path="/reports"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<Loading label="Loading reports…" />}><Reports /></Suspense>
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Admin-only */}
+            <Route
+              path="/admin/users"
+              element={<AdminRoute><Suspense fallback={<Loading label="Loading…" />}><AdminUsers /></Suspense></AdminRoute>}
+            />
+            <Route
+              path="/admin/sla"
+              element={<AdminRoute><Suspense fallback={<Loading label="Loading…" />}><AdminSLA /></Suspense></AdminRoute>}
+            />
+            <Route
+              path="/admin/logs"
+              element={<AdminRoute><Suspense fallback={<Loading label="Loading…" />}><AdminLogs /></Suspense></AdminRoute>}
+            />
+
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchTickets, triggerSync } from "@/services/freshdesk";
+import { loadSlaRules } from "@/services/sla";
 import { isSupabaseConfigured } from "@/services/supabase";
 import { Ticket } from "@/types/freshdesk";
 import { showSuccess, showError } from "@/utils/toast";
@@ -31,6 +32,8 @@ export const useTickets = (autoRefreshMs = 60000): UseTicketsResult => {
         const res = await triggerSync();
         if (!res.ok) showError(res.error ?? "Sync failed");
       }
+      // Apply admin-configured SLA rules before computing anything from tickets.
+      await loadSlaRules();
       const data = await fetchTickets();
       setTickets(data);
       setLastUpdated(new Date());
