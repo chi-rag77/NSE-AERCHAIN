@@ -41,6 +41,7 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
     path === "/admin/users" ? pathname.startsWith("/admin") : pathname === path;
 
   const activeIndex = nav.findIndex((item) => isActive(item.path));
+  const idx = activeIndex >= 0 ? activeIndex : 0;
 
   const displayName = profile?.full_name || profile?.email || "User";
 
@@ -49,30 +50,31 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
     navigate("/login", { replace: true });
   };
 
-  // Liquid blob refs
+  // Neural-path geometry: measure the centre of each node so the connecting
+  // line can fill progressively up to the active node.
   const navRef = useRef<HTMLDivElement>(null);
-  const itemRefs = useRef<(HTMLAnchorElement | null)[]>([]);
-  const [blob, setBlob] = useState<{ left: number; width: number } | null>(null);
+  const nodeRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const [path, setPath] = useState<{ start: number; end: number; fill: number } | null>(null);
   const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (!mounted) return;
-    const idx = activeIndex >= 0 ? activeIndex : 0;
-    const el = itemRefs.current[idx];
-    const container = navRef.current;
-    if (el && container) {
-      const containerRect = container.getBoundingClientRect();
-      const elRect = el.getBoundingClientRect();
-      setBlob({
-        left: elRect.left - containerRect.left,
-        width: elRect.width,
-      });
-    }
-  }, [activeIndex, mounted, nav.length]);
+    const measure = () => {
+      const container = navRef.current;
+      const first = nodeRefs.current[0];
+      const last = nodeRefs.current[nav.length - 1];
+      const active = nodeRefs.current[idx];
+      if (!container || !first || !last || !active) return;
+      const c = container.getBoundingClientRect();
+      const centre = (el: HTMLElement) => el.getBoundingClientRect().left - c.left + el.offsetWidth / 2;
+      setPath({ start: centre(first), end: centre(last), fill: centre(active) });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [idx, mounted, nav.length]);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-[#E8E8F0] bg-white dark:border-border dark:bg-[#0F0F1A]">
@@ -89,54 +91,93 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
           </Link>
 
           <nav className="hidden md:block">
-            <div
-              ref={navRef}
-              className="relative flex items-center gap-0.5 rounded-full border border-[#E2E2EE] bg-[#F5F5FB] p-1 shadow-[0_1px_4px_rgba(0,0,0,0.06)] dark:border-border dark:bg-secondary/40"
-            >
-              {/* Liquid blob */}
-              {blob && mounted && (
+            <div ref={navRef} className="relative flex items-center">
+              {/* Connecting track (muted, full span) */}
+              {path && mounted && (
+                <span
+                  aria-hidden
+                  className="dark:bg-border/70"
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: path.start,
+                    width: Math.max(0, path.end - path.start),
+                    height: 2,
+                    transform: "translateY(-50%)",
+                    background: "#E2E2EE",
+                    borderRadius: 9999,
+                    zIndex: 0,
+                  }}
+                />
+              )}
+              {/* Animated progress fill up to the active node */}
+              {path && mounted && (
                 <span
                   aria-hidden
                   style={{
                     position: "absolute",
-                    top: 4,
-                    bottom: 4,
-                    left: blob.left,
-                    width: blob.width,
-                    transition: "left 0.38s cubic-bezier(0.34,1.42,0.64,1), width 0.38s cubic-bezier(0.34,1.42,0.64,1)",
+                    top: "50%",
+                    left: path.start,
+                    width: Math.max(0, path.fill - path.start),
+                    height: 2,
+                    transform: "translateY(-50%)",
+                    background: "linear-gradient(90deg, #6B4EFF 0%, #8B6FFF 100%)",
                     borderRadius: 9999,
-                    background: "linear-gradient(135deg, #6B4EFF 0%, #8B6FFF 100%)",
-                    boxShadow: "0 2px 14px rgba(107,78,255,0.40), inset 0 1px 0 rgba(255,255,255,0.18)",
-                    backdropFilter: "blur(4px)",
-                    WebkitBackdropFilter: "blur(4px)",
-                    zIndex: 0,
+                    boxShadow: "0 0 8px rgba(107,78,255,0.55)",
+                    transition: "width 0.5s cubic-bezier(0.65,0,0.35,1)",
+                    zIndex: 1,
                   }}
                 />
               )}
 
               {nav.map((item, i) => {
                 const active = isActive(item.path);
+                const passed = i <= idx; // nodes the workflow has reached
                 return (
                   <Link
                     key={item.path}
                     to={item.path}
-                    ref={(el) => { itemRefs.current[i] = el; }}
-                    className={cn(
-                      "group relative z-10 flex items-center gap-1.5 rounded-full px-3.5 py-[7px] text-[13px] font-medium transition-colors duration-150",
-                      active
-                        ? "text-white"
-                        : "text-[#6B6B8A] hover:text-[#1A1A2E] dark:text-muted-foreground dark:hover:text-foreground"
-                    )}
+                    className="group relative z-10 flex flex-col items-center gap-1 px-4 py-1"
                   >
-                    <item.icon
+                    {/* Node */}
+                    <span
+                      ref={(el) => { nodeRefs.current[i] = el; }}
                       className={cn(
-                        "h-[14px] w-[14px] shrink-0 transition-all duration-300",
+                        "relative flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 transition-all duration-300",
                         active
-                          ? "text-white scale-110"
-                          : "text-[#9090A8] group-hover:text-[#6B4EFF] dark:text-muted-foreground"
+                          ? "border-[#6B4EFF] bg-[#6B4EFF]"
+                          : passed
+                          ? "border-[#6B4EFF] bg-white dark:bg-[#0F0F1A]"
+                          : "border-[#CFCFE2] bg-white group-hover:border-[#6B4EFF] dark:border-border dark:bg-[#0F0F1A]"
                       )}
-                    />
-                    <span>{item.label}</span>
+                    >
+                      <item.icon
+                        className={cn(
+                          "h-[9px] w-[9px] shrink-0 transition-colors duration-300",
+                          active ? "text-white" : passed ? "text-[#6B4EFF]" : "text-[#9090A8] group-hover:text-[#6B4EFF] dark:text-muted-foreground"
+                        )}
+                      />
+                      {/* Pulse ring on active */}
+                      {active && (
+                        <span
+                          aria-hidden
+                          className="absolute inset-0 animate-ping rounded-full"
+                          style={{ background: "rgba(107,78,255,0.45)", animationDuration: "1.8s" }}
+                        />
+                      )}
+                    </span>
+
+                    {/* Label */}
+                    <span
+                      className={cn(
+                        "text-[11.5px] font-medium leading-none transition-colors duration-200",
+                        active
+                          ? "font-semibold text-[#1A1A2E] dark:text-white"
+                          : "text-[#6B6B8A] group-hover:text-[#1A1A2E] dark:text-muted-foreground dark:group-hover:text-foreground"
+                      )}
+                    >
+                      {item.label}
+                    </span>
                   </Link>
                 );
               })}
