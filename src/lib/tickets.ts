@@ -129,9 +129,14 @@ export const computeSLA = (t: Ticket): SLAInfo => {
   else if (percent < SLA_ATTENTION_PERCENT) state = "attention";
 
   const abs = Math.abs(remainingMinutes);
-  const h = Math.floor(abs / 60);
+  const d = Math.floor(abs / (60 * 24));
+  const h = Math.floor((abs % (60 * 24)) / 60);
   const m = abs % 60;
-  const remaining = `${remainingMinutes < 0 ? "-" : ""}${h > 0 ? `${h}h ` : ""}${m}m`;
+  const sign = remainingMinutes < 0 ? "-" : "";
+  const remaining =
+    d > 0 ? `${sign}${d}d ${h}h` :
+    h > 0 ? `${sign}${h}h ${m}m` :
+    `${sign}${m}m`;
 
   const meta: Record<SLAState, { label: string; tone: string; dot: string }> = {
     on_track: { label: "On Track", tone: "text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-500" },
