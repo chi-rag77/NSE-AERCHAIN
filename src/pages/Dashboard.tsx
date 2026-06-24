@@ -58,27 +58,26 @@ const Body = ({ tickets, isLoading, openTicket }: {
     );
   }
 
+  const rangeFilter = (
+    <div className="flex items-center gap-2">
+      <CalendarRange className="h-4 w-4 text-muted-foreground" />
+      <Select value={range} onValueChange={(v) => setRange(v as RangeKey)}>
+        <SelectTrigger className="h-9 w-[150px] rounded-lg border-border/60 bg-card/70 text-[13px]">
+          <SelectValue placeholder="Time range" />
+        </SelectTrigger>
+        <SelectContent>
+          {RANGE_OPTIONS.map((o) => (
+            <SelectItem key={o.key} value={o.key}>{o.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
   return (
     <div className="space-y-6">
-      {/* Filter bar */}
-      <div className="flex items-center justify-end">
-        <div className="flex items-center gap-2">
-          <CalendarRange className="h-4 w-4 text-muted-foreground" />
-          <Select value={range} onValueChange={(v) => setRange(v as RangeKey)}>
-            <SelectTrigger className="h-9 w-[160px] rounded-lg border-border/60 bg-card text-[13px]">
-              <SelectValue placeholder="Time range" />
-            </SelectTrigger>
-            <SelectContent>
-              {RANGE_OPTIONS.map((o) => (
-                <SelectItem key={o.key} value={o.key}>{o.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
       {/* Zone 1 — Verdict */}
-      <VerdictHero summary={summary} trend={trend} />
+      <VerdictHero summary={summary} trend={trend} rangeFilter={rangeFilter} />
 
       {/* Zone 2 — Trends */}
       <AssuranceTrends tickets={visible} />

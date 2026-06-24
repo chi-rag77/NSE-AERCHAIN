@@ -1,3 +1,4 @@
+import { ReactNode } from "react";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import {
   CheckCircle2, AlertTriangle, ShieldAlert, TrendingUp, TrendingDown, Minus,
@@ -10,6 +11,8 @@ import {
 interface Props {
   summary: AssuranceSummary;
   trend: CompliancePoint[];
+  /** Optional control (e.g. time-range filter) rendered in the header's top-right. */
+  rangeFilter?: ReactNode;
 }
 
 const verdictTheme = {
@@ -55,7 +58,7 @@ const Gauge = ({ value, color }: { value: number; color: string }) => {
   );
 };
 
-export const VerdictHero = ({ summary, trend }: Props) => {
+export const VerdictHero = ({ summary, trend, rangeFilter }: Props) => {
   const t = verdictTheme[summary.verdict];
   const Icon = t.icon;
   const total = summary.ballInCourt.aerchain + summary.ballInCourt.nse;
@@ -84,6 +87,7 @@ export const VerdictHero = ({ summary, trend }: Props) => {
               {summary.statement}
             </h1>
           </div>
+          {rangeFilter && <div className="shrink-0">{rangeFilter}</div>}
         </div>
 
         {/* ── Body: gauge + metrics ──────────────────────────────────── */}
