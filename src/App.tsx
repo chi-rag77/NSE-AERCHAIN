@@ -34,12 +34,13 @@ const App = () => (
 
             <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/tickets" element={<ProtectedRoute><Tickets /></ProtectedRoute>} />
+            {/* Reports is admin-only */}
             <Route
               path="/reports"
               element={
-                <ProtectedRoute>
+                <AdminRoute>
                   <Suspense fallback={<Loading label="Loading reports…" />}><Reports /></Suspense>
-                </ProtectedRoute>
+                </AdminRoute>
               }
             />
 

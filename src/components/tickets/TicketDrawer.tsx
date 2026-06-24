@@ -1,14 +1,12 @@
 import DOMPurify from "dompurify";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Ticket, Conversation, Priority } from "../../types/freshdesk";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  Clock, User, Send, Paperclip, StickyNote, CheckCircle2, XCircle,
-  Lock, ArrowDownLeft, ArrowUpRight, AlertTriangle, Zap, Timer,
-  Activity, CircleDot,
+  Clock, User, StickyNote, CheckCircle2, XCircle,
+  Lock, ArrowDownLeft, ArrowUpRight, AlertTriangle, Timer,
+  CircleDot,
 } from "lucide-react";
 import { format, differenceInMinutes, parseISO, addHours, addMinutes } from "date-fns";
 import {
@@ -282,112 +280,6 @@ const DNAStrand = ({ milestones }: { milestones: Milestone[] }) => {
   );
 };
 
-// ─── AI Insight card ──────────────────────────────────────────────────────────
-
-const aiRootCauses = (ticket: Ticket) => {
-  const mod = (ticket.module ?? "").toLowerCase();
-  const sub = (ticket.sub_type ?? "").toLowerCase();
-  const type = (ticket.ticket_type ?? "").toLowerCase();
-
-  if (mod.includes("invoice") || sub.includes("invoice")) return [
-    { label: "Invoice Sync Issue", pct: 72 },
-    { label: "Master Data Mismatch", pct: 18 },
-    { label: "User Configuration", pct: 10 },
-  ];
-  if (mod.includes("po") || mod.includes("purchase")) return [
-    { label: "PO Workflow Break", pct: 65 },
-    { label: "Approval Routing", pct: 25 },
-    { label: "ERP Connectivity", pct: 10 },
-  ];
-  if (sub.includes("integration") || sub.includes("sync")) return [
-    { label: "Integration Failure", pct: 68 },
-    { label: "Data Mapping Error", pct: 22 },
-    { label: "Auth Token Expiry", pct: 10 },
-  ];
-  if (type.includes("bug") || type.includes("defect")) return [
-    { label: "Application Bug", pct: 60 },
-    { label: "Data Corruption", pct: 28 },
-    { label: "Browser Compatibility", pct: 12 },
-  ];
-  return [
-    { label: "Configuration Issue", pct: 55 },
-    { label: "Integration Error", pct: 30 },
-    { label: "User Training Gap", pct: 15 },
-  ];
-};
-
-const systemModules = (ticket: Ticket) => {
-  const mod = (ticket.module ?? "").toLowerCase();
-  const all = [
-    { label: "ERP Core", healthy: !mod.includes("erp") },
-    { label: "Invoice Sync", healthy: !mod.includes("invoice") },
-    { label: "PO Processing", healthy: !mod.includes("po") },
-    { label: "Reporting", healthy: !mod.includes("report") },
-  ];
-  // at least one unhealthy to reflect the issue
-  if (all.every(m => m.healthy) && ticket.module) {
-    all[1].healthy = false;
-  }
-  return all;
-};
-
-const AIInsightCard = ({ ticket }: { ticket: Ticket }) => {
-  const causes = aiRootCauses(ticket);
-  const modules = systemModules(ticket);
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      {/* Root cause */}
-      <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-violet-50/50 to-transparent p-4 dark:from-violet-500/5">
-        <div className="mb-3 flex items-center gap-1.5">
-          <Zap className="h-3.5 w-3.5 text-violet-500" />
-          <span className="text-[11px] font-bold uppercase tracking-widest text-violet-600 dark:text-violet-400">AI Insight</span>
-        </div>
-        <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">Root Cause Likelihood</div>
-        <div className="space-y-2.5">
-          {causes.map((c, i) => (
-            <div key={c.label}>
-              <div className="mb-0.5 flex items-center justify-between">
-                <span className={cn("text-[11.5px] font-medium", i === 0 ? "text-foreground" : "text-muted-foreground")}>{c.label}</span>
-                <span className={cn("text-[11px] font-bold", i === 0 ? "text-violet-600 dark:text-violet-400" : "text-muted-foreground")}>{c.pct}%</span>
-              </div>
-              <div className="h-1 w-full overflow-hidden rounded-full bg-border/40">
-                <div
-                  className={cn("h-full rounded-full transition-all duration-700", i === 0 ? "bg-violet-500" : "bg-border")}
-                  style={{ width: `${c.pct}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* System health */}
-      <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-secondary/30 to-transparent p-4">
-        <div className="mb-3 flex items-center gap-1.5">
-          <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">System Health</span>
-        </div>
-        <div className="space-y-2.5">
-          {modules.map((m) => (
-            <div key={m.label} className="flex items-center justify-between">
-              <span className="text-[12px] font-medium text-foreground/80">{m.label}</span>
-              <span className={cn(
-                "flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
-                m.healthy
-                  ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
-                  : "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400"
-              )}>
-                <span className={cn("h-1.5 w-1.5 rounded-full", m.healthy ? "bg-emerald-500" : "animate-pulse bg-rose-500")} />
-                {m.healthy ? "OK" : "Issue"}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // ─── Breach Hero ──────────────────────────────────────────────────────────────
 
 const BreachHero = ({ ticket, milestones }: { ticket: Ticket; milestones: Milestone[] }) => {
@@ -544,9 +436,6 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
               </div>
             </div>
 
-            {/* ── AI Insight + System Health ──────────────────────────────── */}
-            <AIInsightCard ticket={ticket} />
-
             {/* ── Original description ────────────────────────────────────── */}
             {ticket.description && (
               <div className="rounded-2xl border border-border/50 bg-secondary/25 p-4">
@@ -637,38 +526,6 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
             )}
           </div>
         </ScrollArea>
-
-        {/* ── Reply composer ──────────────────────────────────────────────── */}
-        <div className="border-t border-border/60 bg-secondary/20 p-4">
-          <div className="mb-2.5 flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-lg text-xs">
-              <StickyNote className="h-3.5 w-3.5" /> Internal Note
-            </Button>
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-lg text-xs">
-              <Paperclip className="h-3.5 w-3.5" /> Attach
-            </Button>
-          </div>
-          <div className="relative">
-            <Textarea
-              placeholder="Type your reply…"
-              className="min-h-[92px] resize-none rounded-xl border-border/60 bg-card pr-12 text-[13px] focus-visible:ring-2 focus-visible:ring-primary/15"
-            />
-            <Button size="icon" className="absolute bottom-3 right-3 h-8 w-8 rounded-full bg-[#6B4EFF] hover:bg-[#5a3de8]">
-              <Send className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="mt-3 flex items-center justify-between">
-            <div className="flex gap-1.5">
-              <Button variant="secondary" size="sm" className="h-8 rounded-lg text-xs">Pending</Button>
-              <Button variant="secondary" size="sm" className="h-8 gap-1.5 rounded-lg text-xs">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Resolve
-              </Button>
-            </div>
-            <Button size="sm" className="h-8 gap-1.5 rounded-lg bg-[#6B4EFF] px-4 text-xs font-semibold text-white hover:bg-[#5a3de8]">
-              Send Reply
-            </Button>
-          </div>
-        </div>
       </SheetContent>
     </Sheet>
   );

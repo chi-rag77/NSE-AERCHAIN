@@ -35,7 +35,11 @@ export const useTickets = (autoRefreshMs = 60000): UseTicketsResult => {
       // Apply admin-configured SLA rules before computing anything from tickets.
       await loadSlaRules();
       const data = await fetchTickets();
-      setTickets(data);
+      // Ignore "Requirement" type tickets across the whole app.
+      const visible = data.filter(
+        (t) => (t.ticket_type ?? "").trim().toLowerCase() !== "requirement"
+      );
+      setTickets(visible);
       setLastUpdated(new Date());
       if (mode === "manual") showSuccess("Tickets refreshed");
     } catch (e) {
