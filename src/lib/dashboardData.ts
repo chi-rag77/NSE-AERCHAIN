@@ -47,14 +47,18 @@ export interface AssuranceSummary {
   breaching: number;            // currently breached + at-risk open
   pulse: PulseStat[];
   ballInCourt: { aerchain: number; nse: number };
+  windowDays: number;
   windowLabel: string;
 }
 
-export const buildAssurance = (tickets: Ticket[]): AssuranceSummary => {
+export const buildAssurance = (
+  tickets: Ticket[],
+  windowDays: number = WINDOW_DAYS,
+): AssuranceSummary => {
   const now = new Date();
-  const curStart = startOfDay(subDays(now, WINDOW_DAYS - 1));
-  const prevStart = startOfDay(subDays(now, WINDOW_DAYS * 2 - 1));
-  const prevEnd = endOfDay(subDays(now, WINDOW_DAYS));
+  const curStart = startOfDay(subDays(now, windowDays - 1));
+  const prevStart = startOfDay(subDays(now, windowDays * 2 - 1));
+  const prevEnd = endOfDay(subDays(now, windowDays));
 
   const createdCur = tickets.filter((t) => within(t.created_at, curStart, now));
   const createdPrev = tickets.filter((t) => within(t.created_at, prevStart, prevEnd));
@@ -118,7 +122,8 @@ export const buildAssurance = (tickets: Ticket[]): AssuranceSummary => {
       aerchain: tickets.filter(AWAITING_AERCHAIN).length,
       nse: tickets.filter(AWAITING_NSE).length,
     },
-    windowLabel: "Last 30 days",
+    windowDays,
+    windowLabel: `Last ${windowDays} days`,
   };
 };
 
