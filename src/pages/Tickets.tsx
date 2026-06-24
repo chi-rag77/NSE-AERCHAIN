@@ -7,7 +7,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Search, Download, Plus, X, CheckCircle2, UserPlus, Trash2,
+  Search, Download, X, CheckCircle2, UserPlus, Trash2,
   SlidersHorizontal, AlertTriangle, ShieldCheck, Inbox, Hourglass,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -189,12 +189,6 @@ const Body = ({ tickets, isLoading, openTicket }: {
               onClick={() => exportTicketsCSV(filtered)}
             >
               <Download className="h-3.5 w-3.5" /> Export
-            </Button>
-            <Button
-              size="sm"
-              className="h-10 gap-1.5 rounded-xl bg-[#6B4EFF] text-[13px] font-semibold text-white shadow-[0_4px_16px_-4px_rgba(107,78,255,0.5)] hover:bg-[#5a3de8]"
-            >
-              <Plus className="h-4 w-4" /> New Ticket
             </Button>
           </div>
         </div>
