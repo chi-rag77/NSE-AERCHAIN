@@ -6,11 +6,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ArrowUp, ArrowDown, ChevronLeft, ChevronRight, MoreHorizontal, Inbox } from "lucide-react";
+import {
+  ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronsRight,
+  MoreHorizontal, Inbox, AlertTriangle,
+} from "lucide-react";
 import { format, formatDistanceToNow, differenceInDays, parseISO } from "date-fns";
 import { Ticket } from "@/types/freshdesk";
 import {
   PRIORITY_META, STATUS_META, computeSLA, initials, requesterDisplayName,
+  ticketCategory, ticketDept,
 } from "@/lib/tickets";
 
 type SortKey = "id" | "priority" | "status" | "sla" | "updated" | "created" | "aging";
@@ -51,6 +55,36 @@ const avatarColor = (name: string) => {
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   return colours[h % colours.length];
 };
+
+// Solid priority colour used for the row's left "spine" rail.
+const PRIORITY_RAIL: Record<number, string> = {
+  1: "bg-emerald-400",
+  2: "bg-sky-400",
+  3: "bg-amber-400",
+  4: "bg-rose-500",
+};
+
+// SLA → compact label + progress-meter styling for the dedicated SLA column.
+const slaMeter = (state: string) => {
+  switch (state) {
+    case "breached":  return { short: "Breached", bar: "bg-gradient-to-r from-rose-600 to-rose-400", full: true };
+    case "attention": return { short: "At Risk",  bar: "bg-gradient-to-r from-amber-500 to-amber-400", full: false };
+    case "paused":    return { short: "Paused",    bar: "bg-gradient-to-r from-violet-500 to-violet-400", full: true };
+    case "met":       return { short: "Met",       bar: "bg-gradient-to-r from-emerald-500 to-emerald-400", full: true };
+    default:          return { short: "On Track",  bar: "bg-gradient-to-r from-emerald-500 to-emerald-400", full: false };
+  }
+};
+
+const Person = ({ name }: { name: string }) => (
+  <div className="flex items-center gap-2 min-w-0">
+    <Avatar className="h-7 w-7 shrink-0 ring-2 ring-background shadow-sm">
+      <AvatarFallback className={cn("text-[10px] font-bold", avatarColor(name))}>
+        {initials(name)}
+      </AvatarFallback>
+    </Avatar>
+    <span className="truncate text-[12.5px] font-medium text-foreground/75 max-w-[120px]">{name}</span>
+  </div>
+);
 
 export const TicketsTable = ({
   tickets, onRowClick,
@@ -123,7 +157,7 @@ export const TicketsTable = ({
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
-            <TableRow className="border-b border-border/60 hover:bg-transparent">
+            <TableRow className="border-b border-border/60 bg-gradient-to-b from-secondary/40 to-transparent hover:bg-transparent">
               {selectable && (
                 <TableHead className="w-10 pl-4">
                   <Checkbox
@@ -134,17 +168,17 @@ export const TicketsTable = ({
                   />
                 </TableHead>
               )}
-              <Th k="id" label="Ticket" className="w-[100px]" />
-              <Th label="Subject" className="min-w-[280px]" />
-              <Th k="priority" label="Priority" className="w-[100px]" />
+              <Th k="id" label="Ticket" className="w-[96px]" />
+              <Th label="Subject" className="min-w-[300px]" />
+              <Th k="priority" label="Priority" className="w-[110px]" />
               <Th k="status" label="Status" className="w-[120px]" />
               <Th label="Requester" className="hidden lg:table-cell w-[170px]" />
               <Th label="Assignee" className="hidden lg:table-cell w-[170px]" />
               <Th k="created" label="Created" className="hidden 2xl:table-cell w-[120px]" />
               <Th k="updated" label="Updated" className="hidden xl:table-cell w-[130px]" />
               <Th k="aging" label="Age" className="hidden xl:table-cell w-[70px]" />
-              <Th k="sla" label="SLA" className="w-[150px]" />
-              <TableHead className="w-10" />
+              <Th k="sla" label="SLA Window" className="w-[176px]" />
+              <TableHead className="w-12" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -173,22 +207,33 @@ export const TicketsTable = ({
                 const requester = requesterDisplayName(t);
                 const assignee = t.responder_name ?? null;
                 const isBreached = sla.state === "breached";
+                const category = ticketCategory(t);
+                const meter = slaMeter(sla.state);
+                const meterPct = meter.full ? 100 : Math.max(8, Math.round(sla.percent));
+                const rail = isBreached ? "bg-rose-500" : (PRIORITY_RAIL[t.priority] ?? "bg-slate-300");
 
                 return (
                   <TableRow
                     key={t.id}
                     onClick={() => onRowClick(t)}
                     className={cn(
-                      "group relative cursor-pointer border-b border-border/40 transition-colors duration-100 last:border-0",
-                      "hover:bg-primary/[0.025] dark:hover:bg-primary/[0.04]",
+                      "group relative cursor-pointer border-b border-border/40 transition-colors duration-150 last:border-0",
+                      "hover:bg-primary/[0.03] dark:hover:bg-primary/[0.05]",
                       isSel && "bg-primary/[0.05] dark:bg-primary/[0.07]"
                     )}
                   >
                     {selectable && (
-                      <TableCell className="relative py-3.5 pl-4" onClick={(e) => e.stopPropagation()}>
-                        {isBreached && (
-                          <span className="absolute left-0 top-1/2 h-7 w-[3px] -translate-y-1/2 rounded-r-full bg-rose-500" />
-                        )}
+                      <TableCell className="py-3.5 pl-4" onClick={(e) => e.stopPropagation()}>
+                        {/* Priority spine — full-row left rail, breach turns rose + pulses */}
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "absolute left-0 top-0 h-full w-[3px] origin-center scale-y-[0.55] rounded-r-full opacity-60 transition-all duration-200",
+                            "group-hover:scale-y-100 group-hover:opacity-100",
+                            rail,
+                            isBreached && "scale-y-100 opacity-100 animate-pulse"
+                          )}
+                        />
                         <Checkbox
                           checked={isSel}
                           onCheckedChange={() => onToggle?.(t.id)}
@@ -199,28 +244,53 @@ export const TicketsTable = ({
                     )}
 
                     {/* Ticket ID */}
-                    <TableCell className="relative py-3.5 px-3">
-                      {isBreached && !selectable && (
-                        <span className="absolute left-0 top-1/2 h-7 w-[3px] -translate-y-1/2 rounded-r-full bg-rose-500" />
+                    <TableCell className="py-3.5 px-3">
+                      {!selectable && (
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "absolute left-0 top-0 h-full w-[3px] origin-center scale-y-[0.55] rounded-r-full opacity-60 transition-all duration-200",
+                            "group-hover:scale-y-100 group-hover:opacity-100",
+                            rail,
+                            isBreached && "scale-y-100 opacity-100 animate-pulse"
+                          )}
+                        />
                       )}
-                      <span className="font-mono text-[12px] font-semibold text-primary/90">
+                      <span className="rounded-md bg-secondary/60 px-1.5 py-0.5 font-mono text-[11.5px] font-semibold text-primary/90 ring-1 ring-border/40 transition-colors group-hover:bg-primary/10 group-hover:ring-primary/20">
                         #{t.id}
                       </span>
                     </TableCell>
 
-                    {/* Subject */}
+                    {/* Subject + secondary meta line */}
                     <TableCell className="py-3.5 px-3 max-w-0">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className={cn("h-6 w-[3px] shrink-0 rounded-full", p.dot)} />
-                        <span className="truncate text-[13.5px] font-medium text-foreground/90 group-hover:text-foreground">
-                          {t.subject}
-                        </span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="truncate text-[13.5px] font-semibold text-foreground/90 group-hover:text-foreground">
+                            {t.subject}
+                          </span>
+                          {isBreached && (
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-rose-50 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-rose-600 dark:bg-rose-500/10 dark:text-rose-400">
+                              <AlertTriangle className="h-2.5 w-2.5" /> SLA
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground/60">
+                          {category && (
+                            <>
+                              <span className="truncate rounded bg-secondary/70 px-1.5 py-px font-medium text-muted-foreground/80">
+                                {category}
+                              </span>
+                              <span className="text-muted-foreground/30">·</span>
+                            </>
+                          )}
+                          <span className="truncate">{ticketDept(t)}</span>
+                        </div>
                       </div>
                     </TableCell>
 
                     {/* Priority */}
                     <TableCell className="py-3.5 px-3">
-                      <span className={cn("chip", p.tone)}>
+                      <span className={cn("chip ring-1 ring-inset ring-black/[0.03] dark:ring-white/[0.04]", p.tone)}>
                         <span className={cn("h-1.5 w-1.5 rounded-full", p.dot)} />
                         {p.label}
                       </span>
@@ -228,32 +298,18 @@ export const TicketsTable = ({
 
                     {/* Status */}
                     <TableCell className="py-3.5 px-3">
-                      <span className={cn("chip", s.tone)}>{s.label}</span>
+                      <span className={cn("chip ring-1 ring-inset ring-black/[0.03] dark:ring-white/[0.04]", s.tone)}>{s.label}</span>
                     </TableCell>
 
                     {/* Requester */}
                     <TableCell className="hidden lg:table-cell py-3.5 px-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Avatar className="h-7 w-7 shrink-0 ring-2 ring-background">
-                          <AvatarFallback className={cn("text-[10px] font-bold", avatarColor(requester))}>
-                            {initials(requester)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="truncate text-[12.5px] font-medium text-foreground/75 max-w-[120px]">{requester}</span>
-                      </div>
+                      <Person name={requester} />
                     </TableCell>
 
                     {/* Assignee */}
                     <TableCell className="hidden lg:table-cell py-3.5 px-3">
                       {assignee ? (
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Avatar className="h-7 w-7 shrink-0 ring-2 ring-background">
-                            <AvatarFallback className={cn("text-[10px] font-bold", avatarColor(assignee))}>
-                              {initials(assignee)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="truncate text-[12.5px] font-medium text-foreground/75 max-w-[120px]">{assignee}</span>
-                        </div>
+                        <Person name={assignee} />
                       ) : (
                         <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground/50">
                           <span className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-border text-[10px]">—</span>
@@ -287,29 +343,40 @@ export const TicketsTable = ({
                       <span className={cn("chip tabular-nums", aging.cls)}>{aging.label}</span>
                     </TableCell>
 
-                    {/* SLA */}
+                    {/* SLA window meter */}
                     <TableCell className="py-3.5 px-3">
-                      <div className="flex items-center gap-2">
-                        <span className={cn(
-                          "h-2 w-2 shrink-0 rounded-full",
-                          sla.dot,
-                          isBreached && "ring-2 ring-rose-500/20 animate-pulse"
-                        )} />
-                        <div className="leading-tight">
-                          <div className={cn("text-[12px] font-semibold", sla.tone)}>{sla.label}</div>
-                          <div className="text-[10.5px] text-muted-foreground/50 tabular-nums">{sla.remaining}</div>
+                      <div className="w-[150px]">
+                        <div className="mb-1.5 flex items-center justify-between gap-2">
+                          <span className={cn("inline-flex items-center gap-1.5 text-[11.5px] font-semibold", sla.tone)}>
+                            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", sla.dot, isBreached && "animate-pulse")} />
+                            {meter.short}
+                          </span>
+                          <span className="text-[10.5px] tabular-nums text-muted-foreground/55">{sla.remaining}</span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                          <div
+                            className={cn("h-full rounded-full transition-all duration-500", meter.bar)}
+                            style={{ width: `${meterPct}%` }}
+                          />
                         </div>
                       </div>
                     </TableCell>
 
-                    {/* Actions */}
+                    {/* Actions — chevron affordance + overflow menu on hover */}
                     <TableCell className="py-3.5 pr-3" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="ghost" size="icon"
-                        className="h-7 w-7 rounded-lg text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-secondary"
-                      >
-                        <MoreHorizontal size={14} />
-                      </Button>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <Button
+                          variant="ghost" size="icon"
+                          className="h-7 w-7 rounded-lg text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-secondary"
+                          onClick={(e) => { e.stopPropagation(); }}
+                        >
+                          <MoreHorizontal size={14} />
+                        </Button>
+                        <ChevronsRight
+                          className="h-4 w-4 -translate-x-1 text-primary/70 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100"
+                          aria-hidden
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -322,11 +389,13 @@ export const TicketsTable = ({
       {/* Pagination */}
       <div className="flex items-center justify-between border-t border-border/50 px-5 py-3">
         <span className="text-[12px] text-muted-foreground">
+          Showing{" "}
           <span className="font-semibold text-foreground tabular-nums">
             {rows.length === 0 ? 0 : safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, sorted.length)}
           </span>
           {" of "}
           <span className="font-semibold text-foreground tabular-nums">{sorted.length}</span>
+          {" tickets"}
         </span>
         <div className="flex items-center gap-1">
           <Button
