@@ -10,14 +10,12 @@ import {
 import { CalendarRange } from "lucide-react";
 import { buildAssurance, complianceTrend } from "@/lib/dashboardData";
 import { Ticket } from "@/types/freshdesk";
-import { parseISO, subDays } from "date-fns";
 
 /* ── Time-range filter ──────────────────────────────────────────────────── */
-type RangeKey = "all" | "7" | "30" | "60" | "90";
+type RangeKey = "7" | "30" | "60" | "90";
 
 const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
-  { key: "all", label: "All time" },
-  { key: "7", label: "Last week" },
+  { key: "7", label: "Last 7 days" },
   { key: "30", label: "Last 30 days" },
   { key: "60", label: "Last 60 days" },
   { key: "90", label: "Last 90 days" },
@@ -28,16 +26,14 @@ const Body = ({ tickets, isLoading, openTicket }: {
   isLoading: boolean;
   openTicket: (t: Ticket) => void;
 }) => {
-  const [range, setRange] = useState<RangeKey>("all");
+  const [range, setRange] = useState<RangeKey>("30");
+  const windowDays = Number(range);
 
-  const visible = useMemo(() => {
-    if (range === "all") return tickets;
-    const from = subDays(new Date(), Number(range));
-    return tickets.filter((t) => parseISO(t.created_at) >= from);
-  }, [tickets, range]);
-
-  const summary = useMemo(() => buildAssurance(visible), [visible]);
-  const trend = useMemo(() => complianceTrend(visible), [visible]);
+  // The reporting window drives the verdict hero and the trend charts; both
+  // need the full ticket set so they can compute previous-window deltas and
+  // running backlog history themselves.
+  const summary = useMemo(() => buildAssurance(tickets, windowDays), [tickets, windowDays]);
+  const trend = useMemo(() => complianceTrend(tickets, windowDays), [tickets, windowDays]);
 
   if (isLoading) {
     return (
@@ -80,13 +76,13 @@ const Body = ({ tickets, isLoading, openTicket }: {
       <VerdictHero summary={summary} trend={trend} rangeFilter={rangeFilter} />
 
       {/* Zone 2 — Trends */}
-      <AssuranceTrends tickets={visible} />
+      <AssuranceTrends tickets={tickets} windowDays={windowDays} />
 
       {/* Zone 3 — Attention + breakdowns */}
-      <AttentionPanel tickets={visible} onOpen={openTicket} />
+      <AttentionPanel tickets={tickets} onOpen={openTicket} />
 
       {/* Zone 4 — SLA detail */}
-      <SLABreakdownTable tickets={visible} />
+      <SLABreakdownTable tickets={tickets} />
     </div>
   );
 };

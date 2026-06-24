@@ -99,7 +99,7 @@ export const VerdictHero = ({ summary, trend, rangeFilter }: Props) => {
               <div className="hidden flex-col gap-1 sm:flex">
                 <Delta value={summary.slaDelta} unit="pts" goodWhenUp />
                 <span className="max-w-[120px] text-[11px] leading-snug text-muted-foreground">
-                  vs previous 30 days
+                  vs previous {summary.windowDays} days
                 </span>
               </div>
             </div>

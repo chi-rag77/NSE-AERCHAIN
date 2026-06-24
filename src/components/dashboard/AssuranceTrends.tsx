@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { Ticket } from "@/types/freshdesk";
 import {
   backlogTrend, complianceTrend, resolutionVsTarget, severityMix,
-  SLA_TARGET,
+  SLA_TARGET, WINDOW_DAYS,
 } from "@/lib/dashboardData";
 import { useMemo } from "react";
 
@@ -44,12 +44,16 @@ const ChartTip = ({ active, payload, label }: any) => {
   );
 };
 
-export const AssuranceTrends = ({ tickets }: { tickets: Ticket[] }) => {
-  const backlog = useMemo(() => backlogTrend(tickets), [tickets]);
-  const compliance = useMemo(() => complianceTrend(tickets), [tickets]);
+export const AssuranceTrends = ({ tickets, windowDays = WINDOW_DAYS }: {
+  tickets: Ticket[]; windowDays?: number;
+}) => {
+  const backlog = useMemo(() => backlogTrend(tickets, windowDays), [tickets, windowDays]);
+  const compliance = useMemo(() => complianceTrend(tickets, windowDays), [tickets, windowDays]);
   const resolution = useMemo(() => resolutionVsTarget(tickets), [tickets]);
   const severity = useMemo(() => severityMix(tickets), [tickets]);
   const sevTotal = severity.reduce((s, x) => s + x.count, 0);
+  // Show ~5 evenly spaced date ticks regardless of window length.
+  const tickInterval = Math.max(0, Math.floor(windowDays / 5));
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -60,7 +64,7 @@ export const AssuranceTrends = ({ tickets }: { tickets: Ticket[] }) => {
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={backlog} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.6} />
-              <XAxis dataKey="date" axisLine={false} tickLine={false} interval={6} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+              <XAxis dataKey="date" axisLine={false} tickLine={false} interval={tickInterval} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
               <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
               <Tooltip content={<ChartTip />} />
               <Bar dataKey="created" name="created" fill="#6366f1" radius={[3, 3, 0, 0]} maxBarSize={10} fillOpacity={0.85} />
@@ -84,7 +88,7 @@ export const AssuranceTrends = ({ tickets }: { tickets: Ticket[] }) => {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.6} />
-              <XAxis dataKey="date" axisLine={false} tickLine={false} interval={6} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+              <XAxis dataKey="date" axisLine={false} tickLine={false} interval={tickInterval} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
               <YAxis domain={[Math.min(70, ...compliance.map((c) => c.compliance)) - 5, 100]} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
               <Tooltip content={<ChartTip />} />
               <ReferenceLine y={SLA_TARGET} stroke="#f43f5e" strokeDasharray="4 4" strokeOpacity={0.7} />
