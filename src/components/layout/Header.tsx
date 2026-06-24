@@ -33,8 +33,13 @@ export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
   const nav = [
     { label: "Home", path: "/", icon: Home },
     { label: "Tickets", path: "/tickets", icon: TicketIcon },
-    { label: "Reports", path: "/reports", icon: FileBarChart },
-    ...(isAdmin ? [{ label: "Admin", path: "/admin/users", icon: ShieldCheck }] : []),
+    // Reports & Admin are restricted to admins only.
+    ...(isAdmin
+      ? [
+          { label: "Reports", path: "/reports", icon: FileBarChart },
+          { label: "Admin", path: "/admin/users", icon: ShieldCheck },
+        ]
+      : []),
   ];
 
   const isActive = (path: string) =>
