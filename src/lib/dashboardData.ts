@@ -20,6 +20,18 @@ const AWAITING_AERCHAIN = (t: Ticket) => !RESOLVED(t) && t.status !== 8; // Open
 const within = (iso: string, start: Date, end: Date) =>
   isWithinInterval(parseISO(iso), { start, end });
 
+/**
+ * Tickets created within the selected reporting window (last `days`, inclusive).
+ * Used by the "at a glance" breakdowns/distributions so they refresh when the
+ * dashboard date-range filter changes. Trend charts intentionally keep the full
+ * ticket set — they compute running backlog/deltas across the window themselves.
+ */
+export const windowedTickets = (tickets: Ticket[], days: number = WINDOW_DAYS): Ticket[] => {
+  const now = new Date();
+  const start = startOfDay(subDays(now, days - 1));
+  return tickets.filter((t) => within(t.created_at, start, now));
+};
+
 const pctDelta = (curr: number, prev: number): number | null => {
   if (prev === 0) return curr === 0 ? 0 : null;          // null → "new"
   return Math.round(((curr - prev) / prev) * 100);
@@ -180,9 +192,13 @@ export interface ResolutionBar {
   count: number;
 }
 
-export const resolutionVsTarget = (tickets: Ticket[]): ResolutionBar[] =>
-  ([4, 3, 2, 1] as Priority[]).map((p) => {
-    const resolved = tickets.filter((t) => t.priority === p && RESOLVED(t));
+export const resolutionVsTarget = (
+  tickets: Ticket[],
+  windowDays: number = WINDOW_DAYS,
+): ResolutionBar[] => {
+  const scoped = windowedTickets(tickets, windowDays);
+  return ([4, 3, 2, 1] as Priority[]).map((p) => {
+    const resolved = scoped.filter((t) => t.priority === p && RESOLVED(t));
     const durs = resolved.map((t) => resolutionHours(t) ?? 0);
     const avg = durs.length ? durs.reduce((a, b) => a + b, 0) / durs.length : 0;
     const target = SLA_RESOLUTION_HOURS[p];
@@ -195,14 +211,19 @@ export const resolutionVsTarget = (tickets: Ticket[]): ResolutionBar[] =>
       count: resolved.length,
     };
   });
+};
 
 export interface SeveritySlice { priority: string; count: number; color: string; }
 
-export const severityMix = (tickets: Ticket[]): SeveritySlice[] => {
+export const severityMix = (
+  tickets: Ticket[],
+  windowDays: number = WINDOW_DAYS,
+): SeveritySlice[] => {
+  const scoped = windowedTickets(tickets, windowDays);
   const colors: Record<number, string> = { 4: "#f43f5e", 3: "#f59e0b", 2: "#6366f1", 1: "#10b981" };
   return ([4, 3, 2, 1] as Priority[]).map((p) => ({
     priority: priorityName(p),
-    count: tickets.filter((t) => t.priority === p).length,
+    count: scoped.filter((t) => t.priority === p).length,
     color: colors[p],
   }));
 };

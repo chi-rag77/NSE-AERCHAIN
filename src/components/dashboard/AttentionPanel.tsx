@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { Ticket } from "@/types/freshdesk";
 import { computeSLA, PRIORITY_META } from "@/lib/tickets";
 import {
-  atRiskTickets, categoryBreakdown, moduleBreakdown,
+  atRiskTickets, categoryBreakdown, moduleBreakdown, windowedTickets, WINDOW_DAYS,
 } from "@/lib/dashboardData";
 
 const BreakdownList = ({ icon: Icon, title, color, data }: {
@@ -36,16 +36,20 @@ const BreakdownList = ({ icon: Icon, title, color, data }: {
   </div>
 );
 
-export const AttentionPanel = ({ tickets, onOpen }: {
+export const AttentionPanel = ({ tickets, onOpen, windowDays = WINDOW_DAYS }: {
   tickets: Ticket[];
   onOpen: (t: Ticket) => void;
+  windowDays?: number;
 }) => {
-  const atRisk = useMemo(() => atRiskTickets(tickets), [tickets]);
-  const categories = useMemo(() => categoryBreakdown(tickets), [tickets]);
-  const modules = useMemo(() => moduleBreakdown(tickets), [tickets]);
+  // Scope every section to the selected reporting window so they refresh with
+  // the dashboard date-range filter.
+  const scoped = useMemo(() => windowedTickets(tickets, windowDays), [tickets, windowDays]);
+  const atRisk = useMemo(() => atRiskTickets(scoped), [scoped]);
+  const categories = useMemo(() => categoryBreakdown(scoped), [scoped]);
+  const modules = useMemo(() => moduleBreakdown(scoped), [scoped]);
 
-  const breached = tickets.filter((t) => computeSLA(t).state === "breached").length;
-  const attention = tickets.filter((t) => computeSLA(t).state === "attention").length;
+  const breached = scoped.filter((t) => computeSLA(t).state === "breached").length;
+  const attention = scoped.filter((t) => computeSLA(t).state === "attention").length;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

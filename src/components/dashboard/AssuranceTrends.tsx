@@ -49,8 +49,8 @@ export const AssuranceTrends = ({ tickets, windowDays = WINDOW_DAYS }: {
 }) => {
   const backlog = useMemo(() => backlogTrend(tickets, windowDays), [tickets, windowDays]);
   const compliance = useMemo(() => complianceTrend(tickets, windowDays), [tickets, windowDays]);
-  const resolution = useMemo(() => resolutionVsTarget(tickets), [tickets]);
-  const severity = useMemo(() => severityMix(tickets), [tickets]);
+  const resolution = useMemo(() => resolutionVsTarget(tickets, windowDays), [tickets, windowDays]);
+  const severity = useMemo(() => severityMix(tickets, windowDays), [tickets, windowDays]);
   const sevTotal = severity.reduce((s, x) => s + x.count, 0);
   // Show ~5 evenly spaced date ticks regardless of window length.
   const tickInterval = Math.max(0, Math.floor(windowDays / 5));

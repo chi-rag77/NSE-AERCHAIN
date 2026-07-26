@@ -79,10 +79,10 @@ const Body = ({ tickets, isLoading, openTicket }: {
       <AssuranceTrends tickets={tickets} windowDays={windowDays} />
 
       {/* Zone 3 — Attention + breakdowns */}
-      <AttentionPanel tickets={tickets} onOpen={openTicket} />
+      <AttentionPanel tickets={tickets} onOpen={openTicket} windowDays={windowDays} />
 
       {/* Zone 4 — SLA detail */}
-      <SLABreakdownTable tickets={tickets} />
+      <SLABreakdownTable tickets={tickets} windowDays={windowDays} />
     </div>
   );
 };
