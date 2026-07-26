@@ -37,8 +37,10 @@ export const AerchainLogo = ({ className, height = 30, alt = "Aerchain" }: Props
       src={src}
       alt={alt}
       height={height}
-      style={{ height, width: "auto", display: "block" }}
-      className={cn("shrink-0", className)}
+      style={{ height, width: "auto", maxWidth: "100%", display: "block" }}
+      // self-start stops a flex column (e.g. the login brand panel) from
+      // stretching the logo to full width and distorting it.
+      className={cn("shrink-0 self-start", className)}
       onError={() => {
         // Broken uploaded logo → drop through to the committed/bundled files.
         if (useUploaded) setUploadedFailed(true);
