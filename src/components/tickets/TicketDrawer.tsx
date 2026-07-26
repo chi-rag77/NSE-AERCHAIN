@@ -11,7 +11,7 @@ import {
 import { format, differenceInMinutes, parseISO, addHours, addMinutes } from "date-fns";
 import {
   requesterDisplayName, ticketDept, computeSLA,
-  SLA_LABELS, SLA_ACK_MINUTES, SLA_ANALYSIS_MINUTES,
+  SLA_LABELS, SLA_ACK_MINUTES,
   SLA_RESOLUTION_HOURS, SLA_DONE_STATUSES, SLA_PAUSED_STATUS,
   PRIORITY_META, STATUS_META, initials,
 } from "@/lib/tickets";
@@ -74,27 +74,20 @@ const buildMilestones = (ticket: Ticket, conversations: Conversation[]): Milesto
   const slaLabel = SLA_LABELS[ticket.priority as Priority] ?? SLA_LABELS[1];
   const resHours = SLA_RESOLUTION_HOURS[ticket.priority as Priority] ?? SLA_RESOLUTION_HOURS[1];
 
+  // Acknowledgment = first *public* agent reply to the requester. Private
+  // (internal) notes are not an acknowledgment, so they must be excluded —
+  // otherwise the ack time reflects an internal note rather than the reply.
   const firstAgentReply = conversations
-    .filter((c) => !c.incoming)
+    .filter((c) => !c.incoming && !c.private)
     .sort((a, b) => +parseISO(a.created_at) - +parseISO(b.created_at))[0] ?? null;
   const firstReplyAt = firstAgentReply ? parseISO(firstAgentReply.created_at) : null;
 
   const ackDeadline = addMinutes(created, SLA_ACK_MINUTES);
-  const analysisDeadline = addMinutes(created, SLA_ANALYSIS_MINUTES);
   const resDeadline = addHours(created, resHours);
 
   const ackStatus = (): MilestoneStatus => {
     if (!firstReplyAt) return isPaused ? "paused" : "pending";
     return firstReplyAt <= ackDeadline ? "met" : "missed";
-  };
-  const analysisStatus = (): MilestoneStatus => {
-    if (!firstReplyAt) return isPaused ? "paused" : "pending";
-    return firstReplyAt <= analysisDeadline ? "met" : "missed";
-  };
-  const workaroundStatus = (): MilestoneStatus => {
-    if (isDone) return "met";
-    if (isPaused) return "paused";
-    return new Date() > resDeadline ? "missed" : "pending";
   };
   const resolutionStatus = (): MilestoneStatus => {
     if (isDone) return new Date() <= resDeadline ? "met" : "missed";
@@ -106,11 +99,6 @@ const buildMilestones = (ticket: Ticket, conversations: Conversation[]): Milesto
     if (!firstReplyAt) return isPaused ? "Waiting on customer" : "Awaiting first reply";
     const diff = differenceInMinutes(firstReplyAt, ackDeadline);
     return diff <= 0 ? `Replied ${fmtDiff(-diff)} early` : `Replied ${fmtDiff(diff)} late`;
-  };
-  const analysisDetail = () => {
-    if (!firstReplyAt) return isPaused ? "Waiting on customer" : "Awaiting analysis";
-    const diff = differenceInMinutes(firstReplyAt, analysisDeadline);
-    return diff <= 0 ? `Completed ${fmtDiff(-diff)} early` : `Completed ${fmtDiff(diff)} late`;
   };
   const resDetail = (deadline: Date) => {
     if (isDone) return "Resolved";
@@ -129,26 +117,6 @@ const buildMilestones = (ticket: Ticket, conversations: Conversation[]): Milesto
       actual: firstReplyAt,
       status: ackStatus(),
       detail: ackDetail(),
-    },
-    {
-      id: "analysis",
-      label: "Initial Analysis",
-      shortLabel: "ANALYSIS",
-      target: `${SLA_ANALYSIS_MINUTES} min`,
-      deadline: analysisDeadline,
-      actual: firstReplyAt,
-      status: analysisStatus(),
-      detail: analysisDetail(),
-    },
-    {
-      id: "workaround",
-      label: "Workaround",
-      shortLabel: "WORKAROUND",
-      target: slaLabel.workaround,
-      deadline: resDeadline,
-      actual: isDone ? new Date() : null,
-      status: workaroundStatus(),
-      detail: resDetail(resDeadline),
     },
     {
       id: "resolution",
