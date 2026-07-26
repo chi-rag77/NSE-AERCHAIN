@@ -22,15 +22,17 @@ export const useTickets = (autoRefreshMs = 60000): UseTicketsResult => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  // initialLoad: just read from Supabase. manualRefresh: trigger a fresh
-  // Freshdesk → Supabase sync first, then read.
+  // initial: just read from Supabase (fast first paint).
+  // auto / manual: trigger a fresh Freshdesk → Supabase sync first, then read,
+  // so new tickets are fetched automatically without a manual refresh.
+  // Auto sync failures stay silent; only manual refreshes surface an error toast.
   const load = useCallback(async (mode: "initial" | "auto" | "manual") => {
     if (mode === "initial") setIsLoading(true);
     else setIsRefreshing(true);
     try {
-      if (mode === "manual" && isSupabaseConfigured) {
+      if ((mode === "manual" || mode === "auto") && isSupabaseConfigured) {
         const res = await triggerSync();
-        if (!res.ok) showError(res.error ?? "Sync failed");
+        if (!res.ok && mode === "manual") showError(res.error ?? "Sync failed");
       }
       // Apply admin-configured SLA rules before computing anything from tickets.
       await loadSlaRules();
