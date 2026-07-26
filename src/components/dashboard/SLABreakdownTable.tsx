@@ -4,9 +4,16 @@ import { Table2, FileDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Ticket } from "@/types/freshdesk";
 import { buildSLAReport } from "@/lib/reportData";
+import { windowedTickets, WINDOW_DAYS } from "@/lib/dashboardData";
 
-export const SLABreakdownTable = ({ tickets }: { tickets: Ticket[] }) => {
-  const report = useMemo(() => buildSLAReport(tickets, "Last 30 days"), [tickets]);
+export const SLABreakdownTable = ({ tickets, windowDays = WINDOW_DAYS }: {
+  tickets: Ticket[];
+  windowDays?: number;
+}) => {
+  const report = useMemo(() => {
+    const scoped = windowedTickets(tickets, windowDays);
+    return buildSLAReport(scoped, `Last ${windowDays} days`);
+  }, [tickets, windowDays]);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card">

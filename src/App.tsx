@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import { AuthProvider } from "./auth/AuthProvider";
+import { BrandingProvider } from "./hooks/useBranding";
 import { ProtectedRoute, AdminRoute } from "./auth/guards";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -15,6 +16,7 @@ const Reports = lazy(() => import("./pages/Reports"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
 const AdminSLA = lazy(() => import("./pages/admin/AdminSLA"));
 const AdminLogs = lazy(() => import("./pages/admin/AdminLogs"));
+const AdminBranding = lazy(() => import("./pages/admin/AdminBranding"));
 
 const queryClient = new QueryClient();
 
@@ -29,6 +31,7 @@ const App = () => (
       <Sonner position="top-right" />
       <BrowserRouter>
         <AuthProvider>
+          <BrandingProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
 
@@ -57,9 +60,14 @@ const App = () => (
               path="/admin/logs"
               element={<AdminRoute><Suspense fallback={<Loading label="Loading…" />}><AdminLogs /></Suspense></AdminRoute>}
             />
+            <Route
+              path="/admin/branding"
+              element={<AdminRoute><Suspense fallback={<Loading label="Loading…" />}><AdminBranding /></Suspense></AdminRoute>}
+            />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </BrandingProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
