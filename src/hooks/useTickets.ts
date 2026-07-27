@@ -37,11 +37,9 @@ export const useTickets = (autoRefreshMs = 60000): UseTicketsResult => {
       // Apply admin-configured SLA rules before computing anything from tickets.
       await loadSlaRules();
       const data = await fetchTickets();
-      // Ignore "Requirement" type tickets across the whole app.
-      const visible = data.filter(
-        (t) => (t.ticket_type ?? "").trim().toLowerCase() !== "requirement"
-      );
-      setTickets(visible);
+      // Show every ticket type so counts reconcile with Freshdesk's NSE view
+      // (previously "Requirement" type tickets were hidden app-wide).
+      setTickets(data);
       setLastUpdated(new Date());
       if (mode === "manual") showSuccess("Tickets refreshed");
     } catch (e) {
