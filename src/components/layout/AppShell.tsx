@@ -3,7 +3,6 @@ import { Header } from "./Header";
 import { CommandPalette } from "./CommandPalette";
 import { TicketDrawer } from "@/components/tickets/TicketDrawer";
 import { useTickets } from "@/hooks/useTickets";
-import { useSlackNotifications } from "@/hooks/useSlackNotifications";
 import { Ticket, Conversation } from "@/types/freshdesk";
 import { fetchConversations } from "@/services/freshdesk";
 
@@ -19,7 +18,6 @@ interface Props {
 
 export const AppShell = ({ children }: Props) => {
   const { tickets, isLoading, isRefreshing, lastUpdated, refresh } = useTickets();
-  useSlackNotifications(tickets);
   const [cmdOpen, setCmdOpen] = useState(false);
 
   const [selected, setSelected] = useState<Ticket | null>(null);

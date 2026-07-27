@@ -18,3 +18,10 @@ verify_jwt = false
 # reaches the handler. Turning the gateway check off lets the request through;
 # the function still rejects missing/invalid tokens and non-admins itself.
 verify_jwt = false
+
+[functions.slack-notify]
+# verify_jwt = false so pg_cron can invoke it with the anon key (not a user
+# JWT) and the Admin "Test" button's preflight isn't blocked. The function
+# uses the service role internally and only reads admin-set config, so no
+# end-user auth is required.
+verify_jwt = false

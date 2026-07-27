@@ -12,7 +12,7 @@ import { showSuccess, showError } from "@/utils/toast";
 import { isSupabaseConfigured } from "@/services/supabase";
 import {
   SlackConfig, DEFAULT_SLACK_CONFIG, loadSlackConfig, saveSlackConfig,
-  postToSlack, isSlackWebhook,
+  sendSlackTest, isSlackWebhook,
 } from "@/services/slack";
 
 type MapRow = { name: string; id: string };
@@ -60,16 +60,13 @@ const AdminSlack = () => {
     const url = which === "assignee" ? cfg.assigneeWebhookUrl : cfg.slaWebhookUrl;
     if (!isSlackWebhook(url)) return showError("Enter a valid hooks.slack.com webhook URL first");
     setTesting(which);
-    const res = await postToSlack(url, {
-      text:
-        which === "assignee"
-          ? ":white_check_mark: *Test — Assignee alerts connected.* NSE Support dashboard will ping assignees here."
-          : ":white_check_mark: *Test — SLA reminders connected.* NSE Support dashboard will post SLA digests here.",
-      unfurl_links: false,
-    });
+    const res = await sendSlackTest(which, url);
     setTesting(null);
-    if (res.ok) showSuccess("Test message sent — check your Slack channel");
-    else showError(res.error ?? "Could not send test message");
+    if (res.ok) {
+      showSuccess(res.confirmed ? "Test message delivered to Slack ✓" : "Test message sent — check your Slack channel");
+    } else {
+      showError(res.error ?? "Could not send test message");
+    }
   };
 
   const addRow = () => setRows((r) => [...r, { name: "", id: "" }]);
@@ -110,9 +107,10 @@ const AdminSlack = () => {
               Slack webhook setup guide <ExternalLink className="h-3 w-3" />
             </a>
             <p className="text-[11.5px] opacity-90">
-              Alerts are evaluated in the browser while the dashboard is open (frontend-only), so
-              keep a tab open — or a screen — for continuous alerting.
-              {!isSupabaseConfigured && " Demo mode: settings save to this browser only."}
+              Alerts are delivered by a scheduled server job (every ~5&nbsp;min), so they fire even
+              when no one has the dashboard open — no tab needs to stay open. Just save your
+              webhook(s) and enable.
+              {!isSupabaseConfigured && " Demo mode: Supabase isn’t configured, so settings save to this browser only and the scheduled sender is unavailable."}
             </p>
           </div>
         </div>
