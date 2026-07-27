@@ -50,27 +50,50 @@ const sheetVariants = cva(
 interface SheetContentProps
   extends
     React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
-    VariantProps<typeof sheetVariants> {}
+    VariantProps<typeof sheetVariants> {
+  /**
+   * Render as a floating, inset panel (rounded corners, margins on every side,
+   * blurred backdrop) instead of an edge-to-edge sheet. Slides in from `side`.
+   */
+  floating?: boolean;
+}
+
+// Floating variant: a detached card that never touches the screen corners.
+const floatingBase =
+  "fixed z-50 flex flex-col overflow-hidden rounded-[26px] border border-border/60 bg-background shadow-[0_30px_80px_-20px_rgba(16,24,40,0.45)] ring-1 ring-black/5 transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500 inset-4 sm:inset-y-5 sm:w-[calc(100%-2.5rem)] sm:max-w-[660px]";
+const floatingSide = (side: "left" | "right") =>
+  side === "left"
+    ? "sm:right-auto sm:left-5 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
+    : "sm:left-auto sm:right-5 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right";
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = "right", className, children, ...props }, ref) => (
-  <SheetPortal>
-    <SheetOverlay />
-    <SheetPrimitive.Content
-      ref={ref}
-      className={cn(sheetVariants({ side }), className)}
-      {...props}
-    >
-      {children}
-      <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary">
-        <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
-      </SheetPrimitive.Close>
-    </SheetPrimitive.Content>
-  </SheetPortal>
-));
+>(({ side = "right", floating = false, className, children, ...props }, ref) => {
+  const sideKey = side === "left" ? "left" : "right";
+  return (
+    <SheetPortal>
+      <SheetOverlay className={floating ? "bg-black/30 backdrop-blur-[3px]" : undefined} />
+      <SheetPrimitive.Content
+        ref={ref}
+        className={cn(
+          floating ? cn(floatingBase, floatingSide(sideKey)) : sheetVariants({ side }),
+          className,
+        )}
+        {...props}
+      >
+        {children}
+        <SheetPrimitive.Close className={cn(
+          "absolute right-4 top-4 z-20 rounded-full p-1 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary",
+          floating && "bg-white/15 text-white opacity-80 backdrop-blur hover:bg-white/25 hover:opacity-100",
+        )}>
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </SheetPrimitive.Close>
+      </SheetPrimitive.Content>
+    </SheetPortal>
+  );
+});
 SheetContent.displayName = SheetPrimitive.Content.displayName;
 
 const SheetHeader = ({
