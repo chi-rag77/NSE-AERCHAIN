@@ -419,10 +419,22 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
 
   const milestones = buildMilestones(ticket, conversations);
   const requester = requesterDisplayName(ticket);
+  const sla = computeSLA(ticket);
+  // First public agent reply = the acknowledgment message; tag it in the thread.
+  const ackId = conversations
+    .filter((c) => !c.incoming && !c.private)
+    .sort((a, b) => +parseISO(a.created_at) - +parseISO(b.created_at))[0]?.id ?? null;
+
+  const slaPillTone =
+    sla.state === "met" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" :
+    sla.state === "breached" ? "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300" :
+    sla.state === "attention" ? "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" :
+    sla.state === "paused" ? "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" :
+    "bg-[#6B4EFF]/10 text-[#6B4EFF] dark:text-violet-300";
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent side="left" floating className="gap-0 p-0">
+      <SheetContent side="right" floating className="gap-0 p-0">
 
         {/* ── Breach / Status Hero ────────────────────────────────────────── */}
         <BreachHero ticket={ticket} milestones={milestones} />
@@ -431,9 +443,13 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
           <div className="space-y-5 p-5">
 
             {/* ── SLA Section: gauge + DNA strand side by side ───────────── */}
-            <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
-              <div className="border-b border-border/40 bg-secondary/20 px-4 py-3">
+            <div className="rounded-2xl border border-border/60 bg-card overflow-hidden shadow-sm">
+              <div className="flex items-center justify-between border-b border-border/40 bg-secondary/20 px-4 py-3">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">SLA Journey</span>
+                <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", slaPillTone)}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+                  {sla.label}
+                </span>
               </div>
               <div className="flex gap-0">
                 {/* Circular gauge */}
@@ -495,13 +511,18 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
                 </div>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="relative space-y-4">
+                {/* Timeline rail behind the avatars */}
+                {conversations.length > 1 && (
+                  <span aria-hidden className="absolute left-4 top-3 bottom-3 w-px bg-border/60" />
+                )}
                 {conversations.map((conv) => {
                   const author = conv.incoming ? requester : "Support Agent";
                   const html = sanitize(conv.body || conv.body_text || "");
+                  const isAck = conv.id === ackId;
                   return (
-                    <div key={conv.id} className="flex gap-3">
-                      <Avatar className="mt-0.5 h-8 w-8 shrink-0">
+                    <div key={conv.id} className="relative flex gap-3">
+                      <Avatar className="mt-0.5 h-8 w-8 shrink-0 z-10 ring-2 ring-background">
                         <AvatarFallback className={cn(
                           "text-[10px] font-bold text-white",
                           conv.incoming ? avatarColor(author) : "bg-gradient-to-br from-[#6B4EFF] to-[#8b6dff]"
@@ -519,6 +540,11 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
                             {conv.incoming ? <ArrowDownLeft className="h-2.5 w-2.5" /> : <ArrowUpRight className="h-2.5 w-2.5" />}
                             {conv.incoming ? "Incoming" : "Reply"}
                           </span>
+                          {isAck && (
+                            <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
+                              <CheckCircle2 className="h-2.5 w-2.5" /> Acknowledgment
+                            </span>
+                          )}
                           {conv.private && (
                             <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-amber-600 dark:bg-amber-500/10">
                               <Lock className="h-2.5 w-2.5" /> Private
@@ -529,7 +555,7 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
                           </span>
                         </div>
                         <div className={cn(
-                          "rounded-2xl rounded-tl-sm border p-3.5 shadow-sm",
+                          "rounded-2xl rounded-tl-sm border p-3.5 shadow-sm transition-shadow hover:shadow-md",
                           conv.private
                             ? "border-amber-200/60 bg-amber-50/50 dark:border-amber-500/20 dark:bg-amber-500/5"
                             : conv.incoming
