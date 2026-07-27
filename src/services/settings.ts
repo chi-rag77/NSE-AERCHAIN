@@ -28,6 +28,48 @@ const lsSet = (key: string, value: string | null) => {
   }
 };
 
+/**
+ * Generic key/value settings reader. Reads from the Supabase `app_settings`
+ * table when configured, else from localStorage. Falls back to any local
+ * mirror if the remote read fails.
+ */
+export const loadSetting = async (key: string): Promise<string | null> => {
+  if (!supabase) return lsGet(key);
+
+  const { data, error } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", key)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`Failed to load setting "${key}":`, error.message);
+    return lsGet(key);
+  }
+  return data?.value ?? lsGet(key);
+};
+
+/** Generic key/value settings writer (Supabase when configured, else local). */
+export const saveSetting = async (
+  key: string,
+  value: string,
+): Promise<{ ok: boolean; error?: string }> => {
+  if (!supabase) {
+    lsSet(key, value);
+    return { ok: true };
+  }
+
+  const { error } = await supabase
+    .from("app_settings")
+    .upsert(
+      { key, value, updated_at: new Date().toISOString() },
+      { onConflict: "key" },
+    );
+  if (error) return { ok: false, error: error.message };
+  lsSet(key, value); // local mirror for instant reloads
+  return { ok: true };
+};
+
 /** Read the current brand logo (base64 data URI), or null if none set. */
 export const loadBrandLogo = async (): Promise<string | null> => {
   if (!supabase) return lsGet(BRAND_LOGO_KEY);

@@ -17,6 +17,7 @@ const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
 const AdminSLA = lazy(() => import("./pages/admin/AdminSLA"));
 const AdminLogs = lazy(() => import("./pages/admin/AdminLogs"));
 const AdminBranding = lazy(() => import("./pages/admin/AdminBranding"));
+const AdminSlack = lazy(() => import("./pages/admin/AdminSlack"));
 
 const queryClient = new QueryClient();
 
@@ -63,6 +64,10 @@ const App = () => (
             <Route
               path="/admin/branding"
               element={<AdminRoute><Suspense fallback={<Loading label="Loading…" />}><AdminBranding /></Suspense></AdminRoute>}
+            />
+            <Route
+              path="/admin/slack"
+              element={<AdminRoute><Suspense fallback={<Loading label="Loading…" />}><AdminSlack /></Suspense></AdminRoute>}
             />
 
             <Route path="*" element={<NotFound />} />

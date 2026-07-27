@@ -1,12 +1,13 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Users, SlidersHorizontal, ScrollText, ShieldCheck, Image } from "lucide-react";
+import { Users, SlidersHorizontal, ScrollText, ShieldCheck, Image, Slack } from "lucide-react";
 import { Header } from "./Header";
 import { cn } from "@/lib/utils";
 
 const tabs = [
   { label: "Users", path: "/admin/users", icon: Users, desc: "Create & manage who can access the tool" },
   { label: "SLA Rules", path: "/admin/sla", icon: SlidersHorizontal, desc: "Resolution targets by severity" },
+  { label: "Slack", path: "/admin/slack", icon: Slack, desc: "Alert assignees & post SLA reminders" },
   { label: "Branding", path: "/admin/branding", icon: Image, desc: "Upload the logo shown across the app" },
   { label: "Sync Logs", path: "/admin/logs", icon: ScrollText, desc: "Freshdesk sync history" },
 ];
@@ -31,7 +32,7 @@ export const AdminShell = ({ children }: { children: ReactNode }) => {
           </div>
 
           {/* Tabs */}
-          <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {tabs.map((t) => {
               const active = pathname === t.path;
               return (
