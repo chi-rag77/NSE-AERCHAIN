@@ -422,7 +422,7 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-[640px]">
+      <SheetContent side="left" floating className="gap-0 p-0">
 
         {/* ── Breach / Status Hero ────────────────────────────────────────── */}
         <BreachHero ticket={ticket} milestones={milestones} />
