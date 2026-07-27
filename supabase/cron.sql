@@ -31,4 +31,32 @@ select cron.schedule(
   $$
 );
 
+-- ============================================================================
+-- Schedule the slack-notify Edge Function every 5 minutes.
+--
+-- Delivers Slack assignee alerts + SLA reminders server-side, so they fire
+-- even when nobody has the dashboard open. Reads its config from app_settings
+-- (set in Admin → Slack); if Slack is disabled the function is a no-op, so
+-- it is safe to leave scheduled. Deploy the function first:
+--   supabase functions deploy slack-notify
+-- ============================================================================
+
+select cron.unschedule('slack-notify-every-5m')
+where exists (select 1 from cron.job where jobname = 'slack-notify-every-5m');
+
+select cron.schedule(
+  'slack-notify-every-5m',
+  '*/5 * * * *',
+  $$
+  select net.http_post(
+    url     := 'https://hagfwtqqsekoweatlzlr.supabase.co/functions/v1/slack-notify',
+    headers := jsonb_build_object(
+      'Content-Type',  'application/json',
+      'Authorization', 'Bearer sb_publishable_aQ5Y5cHX3eQSArrnof1nXg_pgmJk-gK'
+    ),
+    body    := '{}'::jsonb
+  );
+  $$
+);
+
 -- verify:  select * from cron.job;
