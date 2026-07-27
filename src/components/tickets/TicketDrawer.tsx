@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Clock, User, StickyNote, CheckCircle2, XCircle,
   Lock, ArrowDownLeft, ArrowUpRight, AlertTriangle, Timer,
-  CircleDot,
+  CircleDot, CalendarClock,
 } from "lucide-react";
 import { format, differenceInMinutes, parseISO, addHours, addMinutes } from "date-fns";
 import {
@@ -63,6 +63,10 @@ interface Milestone {
   target: string;
   deadline: Date;
   actual: Date | null;
+  /** What the actual timestamp represents, e.g. "First reply sent". */
+  actualVerb: string;
+  /** How long after the ticket opened the milestone was hit, e.g. "in 6m". */
+  elapsedLabel: string | null;
   status: MilestoneStatus;
   detail: string;
 }
@@ -107,6 +111,13 @@ const buildMilestones = (ticket: Ticket, conversations: Conversation[]): Milesto
     return over > 0 ? `Overdue by ${fmtDiff(over)}` : `${fmtDiff(-over)} remaining`;
   };
 
+  // "in <x>" = time from ticket open to when the milestone was actually hit.
+  const elapsed = (at: Date | null) =>
+    at ? `in ${fmtDiff(Math.max(0, differenceInMinutes(at, created)))}` : null;
+
+  // Best available resolution timestamp: updated_at on a resolved/closed ticket.
+  const resolvedAt = isDone ? parseISO(ticket.updated_at) : null;
+
   return [
     {
       id: "ack",
@@ -115,6 +126,8 @@ const buildMilestones = (ticket: Ticket, conversations: Conversation[]): Milesto
       target: `${SLA_ACK_MINUTES} min`,
       deadline: ackDeadline,
       actual: firstReplyAt,
+      actualVerb: "First reply sent",
+      elapsedLabel: elapsed(firstReplyAt),
       status: ackStatus(),
       detail: ackDetail(),
     },
@@ -124,7 +137,9 @@ const buildMilestones = (ticket: Ticket, conversations: Conversation[]): Milesto
       shortLabel: "RESOLUTION",
       target: slaLabel.resolution,
       deadline: resDeadline,
-      actual: isDone ? new Date() : null,
+      actual: resolvedAt,
+      actualVerb: "Resolved",
+      elapsedLabel: elapsed(resolvedAt),
       status: resolutionStatus(),
       detail: resDetail(resDeadline),
     },
@@ -187,12 +202,14 @@ const DNAStrand = ({ milestones }: { milestones: Milestone[] }) => {
     s === "paused" ? <Timer className="h-3.5 w-3.5" /> :
     <Clock className="h-3.5 w-3.5" />;
 
-  const statusLabel = (m: Milestone) => {
-    if (m.status === "met") return <span className="text-emerald-600 dark:text-emerald-400">Completed</span>;
-    if (m.status === "missed") return <span className="text-rose-600 dark:text-rose-400">Overdue</span>;
-    if (m.status === "paused") return <span className="text-violet-500">Paused</span>;
-    return <span className="text-muted-foreground">Pending</span>;
-  };
+  const pillTone = (s: MilestoneStatus) =>
+    s === "met" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" :
+    s === "missed" ? "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300" :
+    s === "paused" ? "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" :
+    "bg-secondary text-muted-foreground";
+
+  const pillText = (s: MilestoneStatus) =>
+    s === "met" ? "Completed" : s === "missed" ? "Overdue" : s === "paused" ? "Paused" : "Pending";
 
   return (
     <div className="relative pl-5">
@@ -231,14 +248,49 @@ const DNAStrand = ({ milestones }: { milestones: Milestone[] }) => {
             {/* Content */}
             <div className={cn("flex-1 pb-5", i === milestones.length - 1 && "pb-0")}>
               <div className="flex items-start justify-between gap-2">
-                <div>
+                <div className="min-w-0">
                   <div className="text-[13px] font-bold text-foreground leading-tight">{m.label}</div>
                   <div className="text-[11px] text-muted-foreground">Target: {m.target}</div>
                 </div>
-                <div className="text-right shrink-0">
-                  <div className="text-[11.5px] font-semibold">{statusLabel(m)}</div>
-                  <div className="text-[10.5px] text-muted-foreground/70">{m.detail}</div>
+                <div className="flex flex-col items-end gap-0.5 shrink-0">
+                  <span className={cn(
+                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide",
+                    pillTone(m.status)
+                  )}>
+                    {pillText(m.status)}
+                  </span>
+                  <span className="text-[10.5px] text-muted-foreground/70">{m.detail}</span>
                 </div>
+              </div>
+
+              {/* When it actually happened (or when it's due) */}
+              <div className={cn(
+                "mt-2 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px]",
+                m.actual ? "bg-secondary/50" : m.status === "paused" ? "bg-violet-50/60 dark:bg-violet-500/10" : "bg-secondary/30"
+              )}>
+                {m.actual ? (
+                  <>
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    <span className="font-semibold text-foreground/80">{m.actualVerb}</span>
+                    <span className="text-muted-foreground">· {format(m.actual, "MMM d, h:mm a")}</span>
+                    {m.elapsedLabel && (
+                      <span className="ml-auto shrink-0 rounded-md bg-card px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                        {m.elapsedLabel}
+                      </span>
+                    )}
+                  </>
+                ) : m.status === "paused" ? (
+                  <>
+                    <Timer className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+                    <span className="text-violet-600 dark:text-violet-300">Timer paused — waiting on customer</span>
+                  </>
+                ) : (
+                  <>
+                    <CalendarClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+                    <span className="font-semibold text-foreground/70">Due by</span>
+                    <span className="text-muted-foreground">{format(m.deadline, "MMM d, h:mm a")}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
