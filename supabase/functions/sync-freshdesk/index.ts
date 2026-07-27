@@ -46,18 +46,56 @@ Deno.serve(async (req) => {
   const baseUrl = `https://${DOMAIN}/api/v2`;
 
   // ── Resolve NSE company ID ─────────────────────────────────────────────────
+  const companyMatches = (name: string) => {
+    const n = (name ?? "").toUpperCase();
+    return n === "NSE" || n.includes("NSE ") || n.includes(" NSE") || n.includes("NATIONAL STOCK EXCHANGE");
+  };
+
+  // Fallback: reuse the company id from previously-synced tickets. Lets a sync
+  // succeed even when the live /companies call is momentarily unavailable.
+  const companyIdFromDb = async (): Promise<number | null> => {
+    const { data } = await supabase
+      .from("tickets")
+      .select("company_id")
+      .not("company_id", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.company_id ?? null;
+  };
+
   const getNseCompanyId = async (): Promise<number | null> => {
     const hardcoded = Deno.env.get("FRESHDESK_COMPANY_ID");
     if (hardcoded) return Number(hardcoded);
 
-    const res = await fetch(`${baseUrl}/companies?per_page=100`, { headers: fdHeaders });
-    if (!res.ok) return null;
-    const companies = await res.json();
-    const nse = companies.find((c: any) => {
-      const name = (c.name ?? "").toUpperCase();
-      return name === "NSE" || name.includes("NSE ") || name.includes(" NSE") || name.includes("NATIONAL STOCK EXCHANGE");
-    });
-    return nse?.id ?? null;
+    // Paginate through companies (NSE may sit beyond the first 100) and retry
+    // transient responses (429 / 5xx) so a single rate-limited call doesn't
+    // abort the whole sync.
+    let lookupFailed = false;
+    let page = 1;
+    while (page <= 10) {
+      let res: Response | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        res = await fetch(`${baseUrl}/companies?per_page=100&page=${page}`, { headers: fdHeaders });
+        if (res.ok || !(res.status === 429 || res.status >= 500)) break;
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+      }
+      if (!res || !res.ok) { lookupFailed = true; break; }
+      const companies = await res.json();
+      if (!Array.isArray(companies) || companies.length === 0) break;
+      const nse = companies.find((c: any) => companyMatches(c.name));
+      if (nse?.id) return nse.id;
+      if (companies.length < 100) break;
+      page++;
+    }
+
+    // Live lookup exhausted or failed → fall back to a known id from the DB.
+    const cached = await companyIdFromDb();
+    if (cached) return cached;
+    if (lookupFailed) {
+      throw new Error("Freshdesk /companies lookup failed (rate-limited or unavailable) and no cached company id is available. Set FRESHDESK_COMPANY_ID to skip the lookup.");
+    }
+    return null;
   };
 
   // open a sync_log row
