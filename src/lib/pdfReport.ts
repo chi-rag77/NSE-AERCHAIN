@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Ticket } from "@/types/freshdesk";
+import { COMPANY_NAME } from "@/config";
 import { buildSLAReport, buildSummary } from "@/lib/reportData";
 
 /* RGB tuples for the Aerchain palette */
@@ -38,7 +39,7 @@ export const exportSLAPDF = (tickets: Ticket[], periodLabel: string, filename: s
   doc.setTextColor(185, 168, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.text("AERCHAIN  ·  NSE SUPPORT", M + 34, 38);
+  doc.text(`AERCHAIN  ·  ${COMPANY_NAME.toUpperCase()} SUPPORT`, M + 34, 38);
 
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(21);

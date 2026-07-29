@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { Ticket } from "@/types/freshdesk";
+import { COMPANY_NAME } from "@/config";
 import {
   buildSummary, buildTicketRows, buildSLAReport,
   ReportSummary, SLAReport,
@@ -49,7 +50,7 @@ const drawHeaderBand = (
   ws.mergeCells(`A3:${lastCol}3`);
 
   const t = ws.getCell("A1");
-  t.value = "  AERCHAIN  ·  NSE SUPPORT";
+  t.value = `  AERCHAIN  ·  ${COMPANY_NAME.toUpperCase()} SUPPORT`;
   t.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFB9A8FF" } };
   t.fill = fill(C.navy);
   t.alignment = { vertical: "middle", horizontal: "left" };
@@ -375,7 +376,7 @@ const save = async (wb: ExcelJS.Workbook, filename: string) => {
 
 const newBook = () => {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Aerchain · NSE Support";
+  wb.creator = `Aerchain · ${COMPANY_NAME} Support`;
   wb.created = new Date();
   return wb;
 };

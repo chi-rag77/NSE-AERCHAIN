@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, useLocation, Navigate } from "react-router-dom";
 import { Loader2, Lock, Mail, ShieldCheck } from "lucide-react";
 import { AerchainLogo } from "@/components/AerchainLogo";
+import { COMPANY_NAME, COMPANY_FULL_NAME } from "@/config";
 import { useAuth } from "@/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,16 +42,16 @@ const Login = () => {
         <div className="relative max-w-md">
           <ShieldCheck className="mb-5 h-9 w-9 text-[#8B74FF]" />
           <h1 className="font-display text-3xl font-bold leading-tight tracking-tight">
-            NSE Support Service Assurance
+            {COMPANY_NAME} Support Service Assurance
           </h1>
           <p className="mt-3 text-[15px] leading-relaxed text-white/60">
             Secure, real-time visibility into SLA performance, ticket health, and
-            service delivery for National Stock Exchange.
+            service delivery for {COMPANY_FULL_NAME}.
           </p>
         </div>
         <div className="relative flex items-center justify-between">
           <p className="text-[12px] text-white/40">Authorised access only · © {new Date().getFullYear()} Aerchain</p>
-          <img src="/logos/nse.svg" alt="NSE" className="h-7 w-auto opacity-50 invert" />
+          <span className="text-[13px] font-semibold uppercase tracking-[0.18em] text-white/40">{COMPANY_NAME}</span>
         </div>
       </div>
 
@@ -62,9 +63,9 @@ const Login = () => {
             <AerchainLogo height={34} />
           </div>
 
-          {/* Partner logos */}
+          {/* Partner lockup */}
           <div className="mb-8 flex items-center gap-4">
-            <img src="/logos/nse.svg" alt="NSE" className="h-9 w-auto" />
+            <span className="text-[17px] font-bold uppercase tracking-[0.14em] text-foreground/70">{COMPANY_NAME}</span>
             <span className="text-muted-foreground/40 text-lg font-light">×</span>
             <AerchainLogo height={32} />
           </div>

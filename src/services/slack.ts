@@ -12,6 +12,7 @@
 
 import { supabase } from "@/services/supabase";
 import { loadSetting, saveSetting } from "@/services/settings";
+import { COMPANY_NAME } from "@/config";
 
 export interface SlackConfig {
   /** Master switch for the whole integration. */
@@ -96,7 +97,7 @@ export const sendSlackTest = async (
       mode: "no-cors",
       body: new URLSearchParams({
         payload: JSON.stringify({
-          text: `:white_check_mark: *Test — ${which === "assignee" ? "Assignee alerts" : "SLA reminders"} webhook.* NSE Support dashboard.`,
+          text: `:white_check_mark: *Test — ${which === "assignee" ? "Assignee alerts" : "SLA reminders"} webhook.* ${COMPANY_NAME} Support dashboard.`,
           unfurl_links: false,
         }),
       }),
