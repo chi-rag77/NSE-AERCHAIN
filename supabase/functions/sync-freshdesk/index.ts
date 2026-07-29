@@ -125,9 +125,14 @@ Deno.serve(async (req) => {
       }
     } catch { /* non-fatal */ }
 
-    // ── 3. Fetch NSE tickets (paginated, up to 10 pages × 100) ────────────
-    // include=stats gives fr_due_by, due_by, resolved_at, first_responded_at
-    const baseFilter = `?include=requester,company,stats&company_id=${companyId}&per_page=100&order_by=updated_at&order_type=desc`;
+    // ── 3. Fetch NSE tickets created on/after the cutoff (paginated) ──────
+    // Only sync tickets created on/after SYNC_CREATED_AFTER (default: the
+    // 2026-07-27 fresh-start date). Ordered by created_at desc so we can stop
+    // as soon as we cross the cutoff. include=stats gives fr_due_by, due_by, …
+    const createdAfter = Deno.env.get("SYNC_CREATED_AFTER") ?? "2026-07-27T00:00:00Z";
+    const parsedCutoff = Date.parse(createdAfter);
+    const createdAfterMs = Number.isNaN(parsedCutoff) ? 0 : parsedCutoff; // invalid → no cutoff
+    const baseFilter = `?include=requester,company,stats&company_id=${companyId}&per_page=100&order_by=created_at&order_type=desc`;
 
     const allTickets: any[] = [];
     let page = 1;
@@ -136,7 +141,11 @@ Deno.serve(async (req) => {
       if (!res.ok) throw new Error(`Freshdesk tickets ${res.status}: ${await res.text()}`);
       const batch = await res.json();
       if (!Array.isArray(batch) || batch.length === 0) break;
-      allTickets.push(...batch);
+      // Keep only tickets created on/after the cutoff. The list is sorted
+      // created_at desc, so the first older ticket means we're done.
+      const fresh = batch.filter((t: any) => Date.parse(t.created_at) >= createdAfterMs);
+      allTickets.push(...fresh);
+      if (fresh.length < batch.length) break; // crossed the cutoff boundary
       if (batch.length < 100) break;
       page++;
     }
