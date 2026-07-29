@@ -92,9 +92,9 @@ Deno.serve(async (req) => {
     // Live lookup exhausted or failed → fall back to a known id from the DB.
     const cached = await companyIdFromDb();
     if (cached) return cached;
-    if (lookupFailed) {
-      throw new Error("Freshdesk /companies lookup failed (rate-limited or unavailable) and no cached company id is available. Set FRESHDESK_COMPANY_ID to skip the lookup.");
-    }
+    // Unresolved (not matched, or the /companies call was unavailable). Return
+    // null; the caller syncs all tickets rather than aborting the whole sync.
+    if (lookupFailed) console.warn("Freshdesk /companies lookup unavailable; syncing without a company filter.");
     return null;
   };
 
@@ -107,11 +107,10 @@ Deno.serve(async (req) => {
   const logId = logRow?.id;
 
   try {
-    // ── 1. Resolve NSE company ─────────────────────────────────────────────
+    // ── 1. Resolve the company (optional) ──────────────────────────────────
+    // If it can't be resolved we sync ALL tickets instead of failing. Set the
+    // FRESHDESK_COMPANY_ID secret to scope the sync to one company precisely.
     const companyId = await getNseCompanyId();
-    if (!companyId) {
-      throw new Error("NSE company not found in Freshdesk. Set FRESHDESK_COMPANY_ID secret to skip lookup.");
-    }
 
     // ── 2. Fetch agents map (id → name) ───────────────────────────────────
     const agentsMap: Record<number, string> = {};
@@ -132,7 +131,8 @@ Deno.serve(async (req) => {
     const createdAfter = Deno.env.get("SYNC_CREATED_AFTER") ?? "2026-07-27T00:00:00Z";
     const parsedCutoff = Date.parse(createdAfter);
     const createdAfterMs = Number.isNaN(parsedCutoff) ? 0 : parsedCutoff; // invalid → no cutoff
-    const baseFilter = `?include=requester,company,stats&company_id=${companyId}&per_page=100&order_by=created_at&order_type=desc`;
+    const companyParam = companyId ? `&company_id=${companyId}` : ""; // omit → all companies
+    const baseFilter = `?include=requester,company,stats&per_page=100&order_by=created_at&order_type=desc${companyParam}`;
 
     const allTickets: any[] = [];
     let page = 1;
