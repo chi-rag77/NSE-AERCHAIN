@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Ticket } from "@/types/freshdesk";
+import { COMPANY_NAME } from "@/config";
 import {
   availableMonths, ticketsForMonth, buildSummary, buildSLAReport,
 } from "@/lib/reportData";
@@ -48,7 +49,7 @@ const Body = ({ tickets, isLoading }: { tickets: Ticket[]; isLoading: boolean })
     }
   };
 
-  const fileBase = `NSE-${slug(periodLabel)}`;
+  const fileBase = `${COMPANY_NAME}-${slug(periodLabel)}`;
 
   if (isLoading) {
     return (

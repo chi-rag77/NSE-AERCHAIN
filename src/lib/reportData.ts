@@ -1,4 +1,5 @@
 import { Ticket, Priority } from "@/types/freshdesk";
+import { COMPANY_NAME } from "@/config";
 import {
   computeSLA, SLA_RESOLUTION_HOURS, SLA_LABELS,
   PRIORITY_META, STATUS_META, requesterDisplayName, ticketDept,
@@ -160,7 +161,7 @@ export const buildTicketRows = (tickets: Ticket[]): TicketRow[] =>
     const sla = computeSLA(t);
     const rh = resolutionHours(t);
     return {
-      id: `NSE-${t.id}`,
+      id: `${COMPANY_NAME}-${t.id}`,
       subject: t.subject,
       priority: priorityName(t.priority),
       status: statusName(t.status),

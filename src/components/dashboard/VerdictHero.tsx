@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   AssuranceSummary, CompliancePoint, SLA_TARGET,
 } from "@/lib/dashboardData";
+import { COMPANY_NAME } from "@/config";
 
 interface Props {
   summary: AssuranceSummary;
@@ -147,7 +148,7 @@ export const VerdictHero = ({ summary, trend, rangeFilter }: Props) => {
                     <span className="text-muted-foreground">Aerchain</span>
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <span className="text-muted-foreground">NSE</span>
+                    <span className="text-muted-foreground">{COMPANY_NAME}</span>
                     <span className="font-bold text-foreground">{summary.ballInCourt.nse}</span>
                     <span className="h-2 w-2 rounded-full bg-sky-400" />
                   </span>

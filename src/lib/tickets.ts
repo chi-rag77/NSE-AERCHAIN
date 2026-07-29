@@ -1,4 +1,5 @@
 import { Ticket, Priority, Status } from "@/types/freshdesk";
+import { COMPANY_NAME } from "@/config";
 import { differenceInMinutes, parseISO, addHours } from "date-fns";
 
 /* ----------------------------------------------------------------------------
@@ -129,7 +130,7 @@ export const computeSLA = (t: Ticket): SLAInfo => {
 
   // Waiting on Customer → SLA timer is OFF; the ball is in NSE's court.
   if (t.status === SLA_PAUSED_STATUS) {
-    return { state: "paused", label: "Paused — Waiting on NSE", remaining: "Paused", remainingMinutes: Infinity, percent: 100, tone: "text-violet-600 dark:text-violet-400", dot: "bg-violet-500" };
+    return { state: "paused", label: "Paused — Waiting on Customer", remaining: "Paused", remainingMinutes: Infinity, percent: 100, tone: "text-violet-600 dark:text-violet-400", dot: "bg-violet-500" };
   }
 
   const created = parseISO(t.created_at);
@@ -157,7 +158,7 @@ export const computeSLA = (t: Ticket): SLAInfo => {
     attention: { label: "Attention", tone: "text-amber-600 dark:text-amber-400", dot: "bg-amber-500" },
     breached: { label: "Breached", tone: "text-rose-600 dark:text-rose-400", dot: "bg-rose-500" },
     met: { label: "Met", tone: "text-emerald-600", dot: "bg-emerald-500" },
-    paused: { label: "Paused — Waiting on NSE", tone: "text-violet-600 dark:text-violet-400", dot: "bg-violet-500" },
+    paused: { label: "Paused — Waiting on Customer", tone: "text-violet-600 dark:text-violet-400", dot: "bg-violet-500" },
   };
 
   return { state, remaining, remainingMinutes, percent, ...meta[state] };
@@ -176,7 +177,7 @@ const extractDept = (name: string | null): string | null => {
 
 export const ticketDept = (t: Ticket): string => {
   const dept = extractDept(t.requester_name);
-  return dept ? `NSE — ${dept}` : "NSE";
+  return dept ? `${COMPANY_NAME} — ${dept}` : COMPANY_NAME;
 };
 
 export const ticketCategory = (t: Ticket): string =>
