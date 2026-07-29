@@ -89,12 +89,17 @@ const buildMilestones = (ticket: Ticket, conversations: Conversation[]): Milesto
   const ackDeadline = addMinutes(created, SLA_ACK_MINUTES);
   const resDeadline = addHours(created, resHours);
 
+  // Best available resolution timestamp: updated_at on a resolved/closed ticket.
+  const resolvedAt = isDone ? parseISO(ticket.updated_at) : null;
+
   const ackStatus = (): MilestoneStatus => {
     if (!firstReplyAt) return isPaused ? "paused" : "pending";
     return firstReplyAt <= ackDeadline ? "met" : "missed";
   };
   const resolutionStatus = (): MilestoneStatus => {
-    if (isDone) return new Date() <= resDeadline ? "met" : "missed";
+    // Judge by the ACTUAL resolution time, not "now" — otherwise an on-time
+    // resolution flips to "missed" once the clock passes the deadline.
+    if (isDone) return resolvedAt && resolvedAt <= resDeadline ? "met" : "missed";
     if (isPaused) return "paused";
     return new Date() > resDeadline ? "missed" : "pending";
   };
@@ -105,7 +110,11 @@ const buildMilestones = (ticket: Ticket, conversations: Conversation[]): Milesto
     return diff <= 0 ? `Replied ${fmtDiff(-diff)} early` : `Replied ${fmtDiff(diff)} late`;
   };
   const resDetail = (deadline: Date) => {
-    if (isDone) return "Resolved";
+    if (isDone) {
+      if (!resolvedAt) return "Resolved";
+      const late = differenceInMinutes(resolvedAt, deadline);
+      return late <= 0 ? `Resolved ${fmtDiff(-late)} early` : `Resolved ${fmtDiff(late)} late`;
+    }
     if (isPaused) return "Timer paused";
     const over = differenceInMinutes(new Date(), deadline);
     return over > 0 ? `Overdue by ${fmtDiff(over)}` : `${fmtDiff(-over)} remaining`;
@@ -114,9 +123,6 @@ const buildMilestones = (ticket: Ticket, conversations: Conversation[]): Milesto
   // "in <x>" = time from ticket open to when the milestone was actually hit.
   const elapsed = (at: Date | null) =>
     at ? `in ${fmtDiff(Math.max(0, differenceInMinutes(at, created)))}` : null;
-
-  // Best available resolution timestamp: updated_at on a resolved/closed ticket.
-  const resolvedAt = isDone ? parseISO(ticket.updated_at) : null;
 
   return [
     {

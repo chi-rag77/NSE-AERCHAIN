@@ -108,9 +108,23 @@ export interface SLAInfo {
 }
 
 export const computeSLA = (t: Ticket): SLAInfo => {
-  // Resolved / closed tickets are considered met.
+  // Resolved / closed tickets: judge by the ACTUAL resolution time (updated_at
+  // is the best available proxy) against the resolution deadline — not a blanket
+  // "met". This keeps the header verdict, the tickets table, and the drawer's
+  // resolution milestone all in agreement.
   if (SLA_DONE_STATUSES.includes(t.status)) {
-    return { state: "met", label: "Met", remaining: "—", remainingMinutes: 0, percent: 100, tone: "text-emerald-600", dot: "bg-emerald-500" };
+    const created = parseISO(t.created_at);
+    const limit = addHours(created, SLA_RESOLUTION_HOURS[t.priority]);
+    const resolvedAt = parseISO(t.updated_at);
+    const overdue = differenceInMinutes(resolvedAt, limit); // >0 => resolved late
+    if (overdue <= 0) {
+      return { state: "met", label: "Met", remaining: "—", remainingMinutes: 0, percent: 100, tone: "text-emerald-600", dot: "bg-emerald-500" };
+    }
+    const d = Math.floor(overdue / (60 * 24));
+    const h = Math.floor((overdue % (60 * 24)) / 60);
+    const m = overdue % 60;
+    const remaining = d > 0 ? `-${d}d ${h}h` : h > 0 ? `-${h}h ${m}m` : `-${m}m`;
+    return { state: "breached", label: "Breached", remaining, remainingMinutes: -overdue, percent: 0, tone: "text-rose-600 dark:text-rose-400", dot: "bg-rose-500" };
   }
 
   // Waiting on Customer → SLA timer is OFF; the ball is in NSE's court.
