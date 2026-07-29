@@ -174,7 +174,7 @@ export const TicketsTable = ({
               <Th k="status" label="Status" className="w-[120px]" />
               <Th label="Requester" className="hidden lg:table-cell w-[170px]" />
               <Th label="Assignee" className="hidden lg:table-cell w-[170px]" />
-              <Th k="created" label="Created" className="hidden 2xl:table-cell w-[120px]" />
+              <Th k="created" label="Created" className="hidden xl:table-cell w-[120px]" />
               <Th k="updated" label="Updated" className="hidden xl:table-cell w-[130px]" />
               <Th k="aging" label="Age" className="hidden xl:table-cell w-[70px]" />
               <Th k="sla" label="SLA Window" className="w-[176px]" />
@@ -319,7 +319,7 @@ export const TicketsTable = ({
                     </TableCell>
 
                     {/* Created */}
-                    <TableCell className="hidden 2xl:table-cell py-3.5 px-3">
+                    <TableCell className="hidden xl:table-cell py-3.5 px-3">
                       <div className="text-[12px] font-medium text-foreground/70 tabular-nums">
                         {format(parseISO(t.created_at), "dd MMM yyyy")}
                       </div>
