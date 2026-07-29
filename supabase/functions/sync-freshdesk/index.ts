@@ -192,6 +192,22 @@ Deno.serve(async (req) => {
       if (error) throw error;
     }
 
+    // Enforce the cutoff at the DB level too: purge any tickets created before
+    // it (e.g. rows left by an earlier unscoped sync or a pre-cutoff import),
+    // so the table only ever holds tickets created on/after the cutoff. FK
+    // cascades clear their conversations. Guard on a valid cutoff so an invalid
+    // SYNC_CREATED_AFTER never deletes everything.
+    let purged = 0;
+    if (createdAfterMs > 0) {
+      const { data: removed, error: purgeErr } = await supabase
+        .from("tickets")
+        .delete()
+        .lt("created_at", new Date(createdAfterMs).toISOString())
+        .select("id");
+      if (purgeErr) throw purgeErr;
+      purged = removed?.length ?? 0;
+    }
+
     // ── 3. Fetch conversations for the synced tickets ──────────────────────
     let convoCount = 0;
     if (SYNC_CONVOS) {
@@ -224,7 +240,7 @@ Deno.serve(async (req) => {
         .eq("id", logId);
     }
 
-    return json({ ok: true, company_id: companyId, tickets_synced: ticketRows.length, conversations_synced: convoCount });
+    return json({ ok: true, company_id: companyId, tickets_synced: ticketRows.length, conversations_synced: convoCount, tickets_purged: purged });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (logId) {
