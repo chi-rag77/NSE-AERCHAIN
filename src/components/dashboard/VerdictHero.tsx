@@ -14,8 +14,6 @@ interface Props {
   trend: CompliancePoint[];
   /** Optional control (e.g. time-range filter) rendered in the header's top-right. */
   rangeFilter?: ReactNode;
-  /** Active customer label ("All customers" or a specific name). */
-  companyLabel?: string;
 }
 
 const verdictTheme = {
@@ -61,7 +59,7 @@ const Gauge = ({ value, color }: { value: number; color: string }) => {
   );
 };
 
-export const VerdictHero = ({ summary, trend, rangeFilter, companyLabel = COMPANY_NAME }: Props) => {
+export const VerdictHero = ({ summary, trend, rangeFilter }: Props) => {
   const t = verdictTheme[summary.verdict];
   const Icon = t.icon;
   const total = summary.ballInCourt.aerchain + summary.ballInCourt.nse;
@@ -150,7 +148,7 @@ export const VerdictHero = ({ summary, trend, rangeFilter, companyLabel = COMPAN
                     <span className="text-muted-foreground">Aerchain</span>
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <span className="text-muted-foreground">{companyLabel}</span>
+                    <span className="text-muted-foreground">{COMPANY_NAME}</span>
                     <span className="font-bold text-foreground">{summary.ballInCourt.nse}</span>
                     <span className="h-2 w-2 rounded-full bg-sky-400" />
                   </span>
