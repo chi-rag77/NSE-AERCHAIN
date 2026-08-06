@@ -14,6 +14,9 @@
 //                                             empty string = sync all companies)
 //                    SYNC_CREATED_AFTER      (ISO date, default 2026-07-27T00:00:00Z)
 //                    SYNC_CONVERSATIONS      ("false" to skip conversations)
+//                    SYNC_EXCLUDE_TYPES      (comma-separated ticket "Type"s to
+//                                             skip; default "Requirement";
+//                                             empty = exclude none)
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -51,6 +54,14 @@ Deno.serve(async (req) => {
   const COMPANY_FILTER = (Deno.env.get("FRESHDESK_COMPANY_NAME") ?? "NSE").trim().toUpperCase();
   const matchesCompany = (t: any) =>
     !COMPANY_FILTER || String(t.custom_fields?.cf_company ?? "").trim().toUpperCase() === COMPANY_FILTER;
+
+  // Ticket "Type" exclusions — we keep Query / Task / CS Task / Bug / … but do
+  // NOT pull "Requirement" type tickets (they aren't support tickets). Override
+  // with the SYNC_EXCLUDE_TYPES secret (comma-separated; empty = exclude none).
+  const EXCLUDE_TYPES_RAW = (Deno.env.get("SYNC_EXCLUDE_TYPES") ?? "Requirement")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  const EXCLUDE_TYPES = new Set(EXCLUDE_TYPES_RAW.map((s) => s.toUpperCase()));
+  const isExcludedType = (t: any) => EXCLUDE_TYPES.has(String(t.type ?? "").trim().toUpperCase());
 
   // open a sync_log row
   const { data: logRow } = await supabase
@@ -94,8 +105,8 @@ Deno.serve(async (req) => {
       page++;
     }
 
-    // ── 3. Scope to the target company via cf_company ──────────────────────
-    const scoped = allTickets.filter(matchesCompany);
+    // ── 3. Scope to the target company via cf_company, drop excluded types ──
+    const scoped = allTickets.filter((t) => matchesCompany(t) && !isExcludedType(t));
 
     const now = new Date().toISOString();
     const ticketRows = scoped.map((t) => ({
@@ -142,6 +153,20 @@ Deno.serve(async (req) => {
         .select("id");
       if (purgeErr) throw purgeErr;
       purged = removed?.length ?? 0;
+    }
+
+    // Purge any previously-synced tickets whose type is now excluded
+    // (e.g. "Requirement"), so the exclusion self-corrects existing rows.
+    // Case-insensitive match on the stored (original-cased) ticket_type.
+    if (EXCLUDE_TYPES_RAW.length) {
+      const orFilter = EXCLUDE_TYPES_RAW.map((v) => `ticket_type.ilike.${v}`).join(",");
+      const { data: removedTypes, error: typePurgeErr } = await supabase
+        .from("tickets")
+        .delete()
+        .or(orFilter)
+        .select("id");
+      if (typePurgeErr) throw typePurgeErr;
+      purged += removedTypes?.length ?? 0;
     }
 
     // ── 4. Conversations for the scoped tickets ────────────────────────────
