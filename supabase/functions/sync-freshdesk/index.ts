@@ -4,16 +4,14 @@
 // Pulls tickets (and their conversations) from the Freshdesk API and upserts
 // them into public.tickets / public.conversations.
 //
-// Company scoping: this dashboard is multi-customer, so by default we sync
-// EVERY company. Each ticket carries its company in the custom field
-// cf_company (native company_id is often null); we persist that as
-// company_name so the app can group/filter and apply per-customer SLA.
-// To restrict a deployment to a single customer, set FRESHDESK_COMPANY_NAME.
+// Company scoping: NSE tickets are NOT linked to a native Freshdesk company
+// (company_id is null) — they carry the company in the custom field
+// cf_company = "NSE". So we scope by cf_company, NOT the native company_id.
 //
 // Required secrets:  FRESHDESK_DOMAIN, FRESHDESK_API_KEY,
 //                    SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (auto-injected)
-// Optional secrets:  FRESHDESK_COMPANY_NAME  (cf_company to keep; default ""
-//                                             = sync ALL companies)
+// Optional secrets:  FRESHDESK_COMPANY_NAME  (cf_company to keep; default "NSE";
+//                                             empty string = sync all companies)
 //                    SYNC_CREATED_AFTER      (ISO date, default 2026-07-27T00:00:00Z)
 //                    SYNC_CONVERSATIONS      ("false" to skip conversations)
 // ============================================================================
@@ -48,9 +46,9 @@ Deno.serve(async (req) => {
   const fdHeaders = { Authorization: fdAuth, "Content-Type": "application/json" };
   const baseUrl = `https://${DOMAIN}/api/v2`;
 
-  // Scope by the cf_company custom field (native company_id is often null).
-  // Default "" → keep every company (multi-customer). Set the secret to scope.
-  const COMPANY_FILTER = (Deno.env.get("FRESHDESK_COMPANY_NAME") ?? "").trim().toUpperCase();
+  // Scope by the cf_company custom field (native company_id is null for NSE).
+  // Empty string → keep every company.
+  const COMPANY_FILTER = (Deno.env.get("FRESHDESK_COMPANY_NAME") ?? "NSE").trim().toUpperCase();
   const matchesCompany = (t: any) =>
     !COMPANY_FILTER || String(t.custom_fields?.cf_company ?? "").trim().toUpperCase() === COMPANY_FILTER;
 
@@ -120,7 +118,7 @@ Deno.serve(async (req) => {
       fr_escalated: t.fr_escalated ?? false,
       is_escalated: t.is_escalated ?? false,
       spam: t.spam ?? false,
-      company_name: t.company?.name ?? t.custom_fields?.cf_company ?? "Unknown",
+      company_name: t.company?.name ?? t.custom_fields?.cf_company ?? "NSE",
       requester_name: t.requester?.name ?? null,
       requester_email: t.requester?.email ?? null,
       responder_name: t.responder_id ? (agentsMap[t.responder_id] ?? null) : null,

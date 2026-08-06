@@ -1,5 +1,5 @@
 import { Ticket } from "../types/freshdesk";
-import { ticketRef } from "@/lib/tickets";
+import { COMPANY_NAME } from "@/config";
 
 const priorityLabel = (p: number) =>
   ({ 1: "Low", 2: "Medium", 3: "High", 4: "Critical" }[p] ?? String(p));
@@ -22,7 +22,7 @@ export const exportTicketsCSV = (tickets: Ticket[], filename = "tickets.csv") =>
   ];
 
   const rows = tickets.map((t) => [
-    ticketRef(t),
+    `${COMPANY_NAME}-${t.id}`,
     `"${t.subject.replace(/"/g, '""')}"`,
     priorityLabel(t.priority),
     statusLabel(t.status),

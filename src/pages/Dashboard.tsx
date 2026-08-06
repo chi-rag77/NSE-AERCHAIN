@@ -21,11 +21,10 @@ const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
   { key: "90", label: "Last 90 days" },
 ];
 
-const Body = ({ tickets, isLoading, openTicket, companyLabel }: {
+const Body = ({ tickets, isLoading, openTicket }: {
   tickets: Ticket[];
   isLoading: boolean;
   openTicket: (t: Ticket) => void;
-  companyLabel: string;
 }) => {
   const [range, setRange] = useState<RangeKey>("30");
   const windowDays = Number(range);
@@ -33,7 +32,7 @@ const Body = ({ tickets, isLoading, openTicket, companyLabel }: {
   // The reporting window drives the verdict hero and the trend charts; both
   // need the full ticket set so they can compute previous-window deltas and
   // running backlog history themselves.
-  const summary = useMemo(() => buildAssurance(tickets, windowDays, companyLabel), [tickets, windowDays, companyLabel]);
+  const summary = useMemo(() => buildAssurance(tickets, windowDays), [tickets, windowDays]);
   const trend = useMemo(() => complianceTrend(tickets, windowDays), [tickets, windowDays]);
 
   if (isLoading) {
@@ -74,7 +73,7 @@ const Body = ({ tickets, isLoading, openTicket, companyLabel }: {
   return (
     <div className="space-y-6">
       {/* Zone 1 — Verdict */}
-      <VerdictHero summary={summary} trend={trend} rangeFilter={rangeFilter} companyLabel={companyLabel} />
+      <VerdictHero summary={summary} trend={trend} rangeFilter={rangeFilter} />
 
       {/* Zone 2 — Trends */}
       <AssuranceTrends tickets={tickets} windowDays={windowDays} />

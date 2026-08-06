@@ -10,11 +10,6 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { Building2 } from "lucide-react";
-import { ALL_CUSTOMERS } from "@/config";
 import { cn } from "@/lib/utils";
 import { AerchainLogo } from "@/components/AerchainLogo";
 import { isUsingRealAPI } from "@/services/freshdesk";
@@ -27,16 +22,9 @@ interface Props {
   onRefresh?: () => void;
   isRefreshing?: boolean;
   lastUpdated?: Date | null;
-  /** Customer filter — omitted / single-customer deployments hide the control. */
-  companies?: string[];
-  selectedCompany?: string;
-  onSelectCompany?: (v: string) => void;
 }
 
-export const Header = ({
-  onRefresh, isRefreshing, lastUpdated,
-  companies = [], selectedCompany = ALL_CUSTOMERS, onSelectCompany,
-}: Props) => {
+export const Header = ({ onRefresh, isRefreshing, lastUpdated }: Props) => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
@@ -100,23 +88,6 @@ export const Header = ({
 
         {/* Right actions */}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {companies.length > 1 && onSelectCompany && (
-            <div className="mr-2 hidden items-center sm:flex">
-              <Select value={selectedCompany} onValueChange={onSelectCompany}>
-                <SelectTrigger className="h-9 w-[190px] rounded-full border-[#E2E2EE] bg-[#F5F5FB] text-[12.5px] font-medium dark:border-border dark:bg-secondary/40">
-                  <Building2 className="h-[14px] w-[14px] shrink-0 text-[#9090A8]" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_CUSTOMERS}>All customers</SelectItem>
-                  {companies.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
           <span
             className={cn(
               "mr-2 hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold xl:flex",
