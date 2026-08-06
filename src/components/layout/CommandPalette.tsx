@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Ticket } from "@/types/freshdesk";
-import { COMPANY_NAME } from "@/config";
+import { ticketRef } from "@/lib/tickets";
 
 interface Props {
   open: boolean;
@@ -97,10 +97,10 @@ export const CommandPalette = ({ open, onOpenChange, tickets, onSelectTicket, on
           {tickets.slice(0, 8).map((t) => (
             <CommandItem
               key={t.id}
-              value={`${COMPANY_NAME}-${t.id} ${t.subject}`}
+              value={`${ticketRef(t)} ${t.subject}`}
               onSelect={() => go(() => onSelectTicket(t))}
             >
-              <span className="mr-2 font-mono text-xs text-primary">{COMPANY_NAME}-{t.id}</span>
+              <span className="mr-2 font-mono text-xs text-primary">{ticketRef(t)}</span>
               <span className="truncate">{t.subject}</span>
             </CommandItem>
           ))}

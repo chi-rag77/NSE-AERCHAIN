@@ -4,24 +4,37 @@ import { AdminShell } from "@/components/layout/AdminShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { showSuccess, showError } from "@/utils/toast";
-import { SlaRuleRow, loadSlaRules, saveSlaRule, defaultRules } from "@/services/sla";
+import {
+  SlaRuleRow, loadSlaRulesFor, saveSlaRule, defaultRules, listCompanies, DEFAULT_COMPANY,
+} from "@/services/sla";
 import { PRIORITY_META } from "@/lib/tickets";
 import { Priority } from "@/types/freshdesk";
 
 const AdminSLA = () => {
+  const [company, setCompany] = useState<string>(DEFAULT_COMPANY);
+  const [companies, setCompanies] = useState<string[]>([]);
   const [rules, setRules] = useState<SlaRuleRow[]>(defaultRules());
   const [loading, setLoading] = useState(true);
   const [savingP, setSavingP] = useState<number | null>(null);
 
+  // Populate the customer selector once.
+  useEffect(() => {
+    (async () => setCompanies(await listCompanies()))();
+  }, []);
+
+  // Load the ruleset for the selected customer (or the shared default).
   useEffect(() => {
     (async () => {
       setLoading(true);
-      setRules(await loadSlaRules());
+      setRules(await loadSlaRulesFor(company));
       setLoading(false);
     })();
-  }, []);
+  }, [company]);
 
   const update = (priority: number, patch: Partial<SlaRuleRow>) =>
     setRules((rs) => rs.map((r) => (r.priority === priority ? { ...r, ...patch } : r)));
@@ -29,11 +42,15 @@ const AdminSLA = () => {
   const onSave = async (rule: SlaRuleRow) => {
     if (rule.resolution_hours <= 0) { showError("Resolution hours must be greater than 0."); return; }
     setSavingP(rule.priority);
-    const res = await saveSlaRule(rule);
+    const res = await saveSlaRule({ ...rule, company_name: company });
     setSavingP(null);
-    if (res.ok) showSuccess(`${PRIORITY_META[rule.priority as Priority]?.label ?? "Rule"} SLA saved`);
-    else showError(res.error ?? "Failed to save");
+    if (res.ok) {
+      const scope = company ? company : "Default";
+      showSuccess(`${scope} · ${PRIORITY_META[rule.priority as Priority]?.label ?? "Rule"} SLA saved`);
+    } else showError(res.error ?? "Failed to save");
   };
+
+  const isOverride = company !== DEFAULT_COMPANY;
 
   return (
     <AdminShell>
@@ -41,17 +58,47 @@ const AdminSLA = () => {
         <div className="flex items-start gap-2.5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-[12.5px] text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            These resolution targets (in calendar hours) drive the SLA gauge, compliance
-            trends, the at-risk list, and the downloadable reports across the whole dashboard.
+            The <strong>Default</strong> ruleset applies to every customer. Pick a customer to
+            give them a <strong>custom SLA</strong> that overrides the default — anything you
+            don't change there keeps falling back to the default. These targets (in calendar
+            hours) drive the SLA gauge, compliance trends, the at-risk list, and the reports.
             Changes take effect on the next data refresh.
           </p>
+        </div>
+
+        {/* Customer selector — Default (all customers) vs a per-customer override */}
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-5 py-4">
+          <Label className="text-[12px] font-semibold text-muted-foreground">Customer</Label>
+          <Select value={company} onValueChange={setCompany}>
+            <SelectTrigger className="h-9 w-[240px] text-[13px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={DEFAULT_COMPANY}>Default — all customers</SelectItem>
+              {companies.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span
+            className={cn(
+              "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold uppercase",
+              isOverride
+                ? "bg-violet-500/10 text-violet-600 dark:text-violet-300"
+                : "bg-sky-500/10 text-sky-600 dark:text-sky-300",
+            )}
+          >
+            {isOverride ? "Custom override" : "Shared default"}
+          </span>
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-border bg-card">
           <div className="flex items-center gap-2.5 border-b border-border/60 bg-secondary/20 px-5 py-4">
             <SlidersHorizontal className="h-4 w-4 text-violet-600 dark:text-violet-300" />
             <div>
-              <h2 className="text-[14px] font-bold">SLA Rules by Severity</h2>
+              <h2 className="text-[14px] font-bold">
+                SLA Rules by Severity {isOverride && <span className="text-violet-600 dark:text-violet-300">· {company}</span>}
+              </h2>
               <p className="text-[12px] text-muted-foreground">Resolution, acknowledgment & analysis targets</p>
             </div>
           </div>

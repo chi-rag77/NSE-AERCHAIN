@@ -16,3 +16,6 @@ export const COMPANY_NAME =
 
 export const COMPANY_FULL_NAME =
   ((import.meta.env.VITE_COMPANY_FULL_NAME as string | undefined) ?? "").trim() || COMPANY_NAME;
+
+// Sentinel for the "show every customer" option in the header's customer filter.
+export const ALL_CUSTOMERS = "__all__";

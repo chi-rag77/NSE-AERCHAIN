@@ -67,6 +67,7 @@ export interface AssuranceSummary {
 export const buildAssurance = (
   tickets: Ticket[],
   windowDays: number = WINDOW_DAYS,
+  companyLabel: string = COMPANY_NAME,
 ): AssuranceSummary => {
   const now = new Date();
   const curStart = startOfDay(subDays(now, windowDays - 1));
@@ -112,10 +113,10 @@ export const buildAssurance = (
   const tk = (n: number) => `${n} ticket${n === 1 ? "" : "s"}`;
   const statement =
     verdict === "healthy"
-      ? `${COMPANY_NAME} support is in great shape — ${curComp}% SLA compliance and every ticket comfortably on track.`
+      ? `${companyLabel} support is in great shape — ${curComp}% SLA compliance and every ticket comfortably on track.`
       : verdict === "watch"
-        ? `${COMPANY_NAME} support is tracking well at ${curComp}% SLA compliance. We're actively progressing ${tk(breaching)} to keep service levels strong.`
-        : `We're focused on lifting ${COMPANY_NAME} service levels — currently ${curComp}% SLA compliance, with ${tk(breaching)} being prioritised to bring performance back to target.`;
+        ? `${companyLabel} support is tracking well at ${curComp}% SLA compliance. We're actively progressing ${tk(breaching)} to keep service levels strong.`
+        : `We're focused on lifting ${companyLabel} service levels — currently ${curComp}% SLA compliance, with ${tk(breaching)} being prioritised to bring performance back to target.`;
 
   const pulse: PulseStat[] = [
     { key: "new", label: "New", value: createdCur.length, delta: pctDelta(createdCur.length, createdPrev.length), goodWhenUp: false },

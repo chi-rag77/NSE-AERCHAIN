@@ -13,7 +13,6 @@ import {
 import { cn } from "@/lib/utils";
 import { Ticket } from "@/types/freshdesk";
 import { computeSLA, computeMetrics } from "@/lib/tickets";
-import { COMPANY_NAME } from "@/config";
 import { exportTicketsCSV } from "@/utils/export";
 import { showSuccess } from "@/utils/toast";
 
@@ -41,8 +40,8 @@ const Kpi = ({
   </div>
 );
 
-const Body = ({ tickets, isLoading, openTicket }: {
-  tickets: Ticket[]; isLoading: boolean; openTicket: (t: Ticket) => void;
+const Body = ({ tickets, isLoading, openTicket, companyLabel }: {
+  tickets: Ticket[]; isLoading: boolean; openTicket: (t: Ticket) => void; companyLabel: string;
 }) => {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<TabKey>("all");
@@ -109,7 +108,7 @@ const Body = ({ tickets, isLoading, openTicket }: {
               Support Tickets
             </h1>
             <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary ring-1 ring-primary/15">
-              {COMPANY_NAME}
+              {companyLabel}
             </span>
           </div>
           <p className="mt-1 text-[13px] text-muted-foreground">
