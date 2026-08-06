@@ -1,7 +1,8 @@
 import { Ticket, Priority } from "@/types/freshdesk";
+import { COMPANY_NAME } from "@/config";
 import {
-  computeSLA, resolutionHoursFor, SLA_LABELS,
-  PRIORITY_META, STATUS_META, requesterDisplayName, ticketDept, ticketRef,
+  computeSLA, SLA_RESOLUTION_HOURS, SLA_LABELS,
+  PRIORITY_META, STATUS_META, requesterDisplayName, ticketDept,
 } from "@/lib/tickets";
 import { differenceInHours, format, parseISO } from "date-fns";
 
@@ -26,7 +27,7 @@ export const resolutionHours = (t: Ticket): number | null => {
  *  - open      → met unless computeSLA says breached
  */
 export const metSLA = (t: Ticket): boolean => {
-  const target = resolutionHoursFor(t.company_name, t.priority);
+  const target = SLA_RESOLUTION_HOURS[t.priority] ?? SLA_RESOLUTION_HOURS[1];
   const rh = resolutionHours(t);
   if (rh !== null) return rh <= target;
   return computeSLA(t).state !== "breached";
@@ -160,7 +161,7 @@ export const buildTicketRows = (tickets: Ticket[]): TicketRow[] =>
     const sla = computeSLA(t);
     const rh = resolutionHours(t);
     return {
-      id: ticketRef(t),
+      id: `${COMPANY_NAME}-${t.id}`,
       subject: t.subject,
       priority: priorityName(t.priority),
       status: statusName(t.status),

@@ -49,7 +49,6 @@ interface TicketRow {
   responder_id: number | null;
   responder_name: string | null;
   requester_name: string | null;
-  company_name: string | null;
 }
 
 // Default calendar-hour SLA resolution targets (mirrors src/lib/tickets.ts).
@@ -108,21 +107,11 @@ const assigneeMessage = (t: TicketRow, cfg: SlackConfig) => {
   return { text: lines.join("\n"), unfurl_links: false };
 };
 
-// Per-company SLA resolver: an override for the ticket's company if present,
-// else the shared default. Mirrors resolutionHoursFor() in src/lib/tickets.ts.
-type ResHoursByCompany = { default: Record<number, number>; overrides: Record<string, Record<number, number>> };
-const resolveHours = (map: ResHoursByCompany, company: string | null, priority: number): number => {
-  const key = (company ?? "").trim().toUpperCase();
-  const ov = map.overrides[key]?.[priority];
-  if (ov != null) return ov;
-  return map.default[priority] ?? DEFAULT_RES_HOURS[priority] ?? DEFAULT_RES_HOURS[1];
-};
-
 // SLA state for a ticket → remaining minutes + whether it's breached/at-risk.
-const slaState = (t: TicketRow, resMap: ResHoursByCompany) => {
+const slaState = (t: TicketRow, resHours: Record<number, number>) => {
   if (SLA_DONE.includes(t.status)) return null;
   if (t.status === SLA_PAUSED) return null;
-  const hours = resolveHours(resMap, t.company_name, t.priority);
+  const hours = resHours[t.priority] ?? DEFAULT_RES_HOURS[t.priority] ?? DEFAULT_RES_HOURS[1];
   const limit = new Date(t.created_at).getTime() + hours * 3600_000;
   const remainingMin = Math.round((limit - Date.now()) / 60000);
   const total = hours * 60;
@@ -159,7 +148,7 @@ Deno.serve(async (req) => {
   if (test?.test === "assignee" || test?.test === "sla") {
     const url = test.webhookUrl || (test.test === "assignee" ? cfg.assigneeWebhookUrl : cfg.slaWebhookUrl);
     const ok = await sendWebhook(url, {
-      text: `:white_check_mark: *Test — ${test.test === "assignee" ? "Assignee alerts" : "SLA reminders"} connected.* Support dashboard will post here.`,
+      text: `:white_check_mark: *Test — ${test.test === "assignee" ? "Assignee alerts" : "SLA reminders"} connected.* NSE Support dashboard will post here.`,
       unfurl_links: false,
     });
     return json({ ok, delivered: ok });
@@ -167,22 +156,17 @@ Deno.serve(async (req) => {
 
   if (!cfg.enabled) return json({ ok: true, skipped: "disabled" });
 
-  // ── SLA rules (default + per-customer overrides) ────────────────────────────
-  const resMap: ResHoursByCompany = { default: { ...DEFAULT_RES_HOURS }, overrides: {} };
-  const { data: rules } = await supabase
-    .from("sla_rules")
-    .select("priority, resolution_hours, company_name");
-  (rules ?? []).forEach((r: { priority: number; resolution_hours: number; company_name?: string | null }) => {
-    if (!r?.priority) return;
-    const key = (r.company_name ?? "").trim().toUpperCase();
-    if (!key) resMap.default[r.priority] = r.resolution_hours;
-    else (resMap.overrides[key] ??= {})[r.priority] = r.resolution_hours;
+  // ── SLA rules (admin overrides) ────────────────────────────────────────────
+  const resHours: Record<number, number> = { ...DEFAULT_RES_HOURS };
+  const { data: rules } = await supabase.from("sla_rules").select("priority, resolution_hours");
+  (rules ?? []).forEach((r: { priority: number; resolution_hours: number }) => {
+    if (r?.priority) resHours[r.priority] = r.resolution_hours;
   });
 
   // ── Tickets ────────────────────────────────────────────────────────────────
   const { data: tickets, error: tErr } = await supabase
     .from("tickets")
-    .select("id, subject, priority, status, created_at, responder_id, responder_name, requester_name, company_name")
+    .select("id, subject, priority, status, created_at, responder_id, responder_name, requester_name")
     .order("updated_at", { ascending: false })
     .limit(500);
   if (tErr) return json({ error: tErr.message }, 500);
@@ -233,7 +217,7 @@ Deno.serve(async (req) => {
     const intervalMs = Math.max(1, cfg.slaReminderHours) * 3600_000;
     if (Date.now() - lastSent >= intervalMs) {
       const scored = rows
-        .map((t) => ({ t, s: slaState(t, resMap) }))
+        .map((t) => ({ t, s: slaState(t, resHours) }))
         .filter((x) => x.s && (x.s.state === "breached" || x.s.state === "attention"))
         .sort((a, b) => (a.s!.remainingMin) - (b.s!.remainingMin));
 
@@ -247,7 +231,7 @@ Deno.serve(async (req) => {
           return `${dot} *#${t.id}* ${t.subject} — ${when}${who}`;
         };
         const text = [
-          ":rotating_light: *SLA Watch — Support*",
+          ":rotating_light: *SLA Watch — NSE Support*",
           `*${breached}* breached · *${atRisk}* at risk`,
           "",
           ...scored.slice(0, 15).map(line),
