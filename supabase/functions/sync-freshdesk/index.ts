@@ -129,6 +129,47 @@ Deno.serve(async (req) => {
       synced_at: now,
     }));
 
+    // ── 3.5 Status-history capture (SLA Autopsy P0) ────────────────────────
+    // Snapshot each scoped ticket's PREVIOUSLY stored status before we
+    // overwrite it below, so a change can be diffed and logged. A ticket
+    // we've never synced before gets a synthetic starting row instead of a
+    // diff (there's nothing to diff against).
+    let historyInserted = 0;
+    if (ticketRows.length) {
+      const scopedIds = ticketRows.map((t) => t.id);
+      const prevStatusMap: Record<number, number> = {};
+      const { data: prevRows } = await supabase.from("tickets").select("id, status").in("id", scopedIds);
+      for (const r of prevRows ?? []) prevStatusMap[r.id] = r.status;
+
+      const historyRows = ticketRows
+        .filter((t) => prevStatusMap[t.id] !== undefined && prevStatusMap[t.id] !== t.status)
+        .map((t) => ({
+          ticket_id: t.id,
+          from_status: prevStatusMap[t.id],
+          to_status: t.status,
+          changed_at: now,             // best known: this sync detected the change
+          source: "sync_diff",
+          confidence: "exact",
+        }))
+        .concat(
+          ticketRows
+            .filter((t) => prevStatusMap[t.id] === undefined)
+            .map((t) => ({
+              ticket_id: t.id,
+              from_status: null,
+              to_status: t.status,
+              changed_at: t.created_at,
+              source: "sync_diff_initial",
+              confidence: "approximate",
+            }))
+        );
+
+      if (historyRows.length) {
+        const { error: histErr } = await supabase.from("ticket_status_history").insert(historyRows);
+        if (!histErr) historyInserted = historyRows.length;
+      }
+    }
+
     if (ticketRows.length) {
       const { error } = await supabase.from("tickets").upsert(ticketRows, { onConflict: "id" });
       if (error) throw error;
@@ -178,7 +219,7 @@ Deno.serve(async (req) => {
         .eq("id", logId);
     }
 
-    return json({ ok: true, company_filter: COMPANY_FILTER || "(all)", fetched: allTickets.length, tickets_synced: ticketRows.length, conversations_synced: convoCount, tickets_purged: purged });
+    return json({ ok: true, company_filter: COMPANY_FILTER || "(all)", fetched: allTickets.length, tickets_synced: ticketRows.length, conversations_synced: convoCount, tickets_purged: purged, status_changes_logged: historyInserted });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (logId) {

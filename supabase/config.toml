@@ -25,3 +25,10 @@ verify_jwt = false
 # uses the service role internally and only reads admin-set config, so no
 # end-user auth is required.
 verify_jwt = false
+
+[functions.analyze-ticket]
+# verify_jwt = false for the same CORS-preflight reason as admin-users: the
+# function verifies the caller's JWT itself (any signed-in, non-disabled
+# user — not admin-only), so the gateway's own check must stay off or the
+# unauthenticated OPTIONS preflight gets rejected before it reaches the code.
+verify_jwt = false
