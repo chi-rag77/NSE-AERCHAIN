@@ -1,6 +1,6 @@
 import { Ticket, Priority } from "@/types/freshdesk";
 import {
-  computeSLA, resolutionHoursFor, SLA_LABELS,
+  computeSLA, resolutionHoursFor, SLA_LABELS, isSlaExempt,
   PRIORITY_META, STATUS_META, requesterDisplayName, ticketDept, ticketRef,
 } from "@/lib/tickets";
 import { differenceInHours, format, parseISO } from "date-fns";
@@ -26,6 +26,8 @@ export const resolutionHours = (t: Ticket): number | null => {
  *  - open      → met unless computeSLA says breached
  */
 export const metSLA = (t: Ticket): boolean => {
+  // Requirement tickets have no SLA clock — never count them as breached.
+  if (isSlaExempt(t)) return true;
   const target = resolutionHoursFor(t.company_name, t.priority);
   const rh = resolutionHours(t);
   if (rh !== null) return rh <= target;
@@ -171,7 +173,8 @@ export const buildTicketRows = (tickets: Ticket[]): TicketRow[] =>
       updated: format(parseISO(t.updated_at), "dd MMM yyyy, h:mm a"),
       ageHours: Math.max(0, differenceInHours(new Date(), parseISO(t.created_at))),
       slaState:
-        sla.state === "met" ? "Met"
+        sla.state === "not_applicable" ? "N/A — Requirement"
+        : sla.state === "met" ? "Met"
         : sla.state === "breached" ? "Breached"
         : sla.state === "attention" ? "At Risk"
         : "On Track",

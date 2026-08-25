@@ -67,11 +67,12 @@ const PRIORITY_RAIL: Record<number, string> = {
 // SLA → compact label + progress-meter styling for the dedicated SLA column.
 const slaMeter = (state: string) => {
   switch (state) {
-    case "breached":  return { short: "Breached", bar: "bg-gradient-to-r from-rose-600 to-rose-400", full: true };
-    case "attention": return { short: "At Risk",  bar: "bg-gradient-to-r from-amber-500 to-amber-400", full: false };
-    case "paused":    return { short: "Paused",    bar: "bg-gradient-to-r from-violet-500 to-violet-400", full: true };
-    case "met":       return { short: "Met",       bar: "bg-gradient-to-r from-emerald-500 to-emerald-400", full: true };
-    default:          return { short: "On Track",  bar: "bg-gradient-to-r from-emerald-500 to-emerald-400", full: false };
+    case "breached":       return { short: "Breached", bar: "bg-gradient-to-r from-rose-600 to-rose-400", full: true };
+    case "attention":      return { short: "At Risk",  bar: "bg-gradient-to-r from-amber-500 to-amber-400", full: false };
+    case "paused":         return { short: "Paused",    bar: "bg-gradient-to-r from-violet-500 to-violet-400", full: true };
+    case "met":            return { short: "Met",       bar: "bg-gradient-to-r from-emerald-500 to-emerald-400", full: true };
+    case "not_applicable": return { short: "Not Tracked", bar: "bg-slate-300 dark:bg-slate-600", full: true };
+    default:                return { short: "On Track",  bar: "bg-gradient-to-r from-emerald-500 to-emerald-400", full: false };
   }
 };
 
@@ -346,19 +347,34 @@ export const TicketsTable = ({
                     {/* SLA window meter */}
                     <TableCell className="py-3.5 px-3">
                       <div className="w-[150px]">
-                        <div className="mb-1.5 flex items-center justify-between gap-2">
-                          <span className={cn("inline-flex items-center gap-1.5 text-[11.5px] font-semibold", sla.tone)}>
-                            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", sla.dot, isBreached && "animate-pulse")} />
-                            {meter.short}
-                          </span>
-                          <span className="text-[10.5px] tabular-nums text-muted-foreground/55">{sla.remaining}</span>
-                        </div>
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                        {sla.state === "not_applicable" ? (
                           <div
-                            className={cn("h-full rounded-full transition-all duration-500", meter.bar)}
-                            style={{ width: `${meterPct}%` }}
-                          />
-                        </div>
+                            className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground/70"
+                            title={sla.remaining}
+                          >
+                            <span className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600" />
+                            <span>
+                              <span className="font-semibold text-muted-foreground">Not tracked</span>{" "}
+                              — no SLA on Requirement tickets
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="mb-1.5 flex items-center justify-between gap-2">
+                              <span className={cn("inline-flex items-center gap-1.5 text-[11.5px] font-semibold", sla.tone)}>
+                                <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", sla.dot, isBreached && "animate-pulse")} />
+                                {meter.short}
+                              </span>
+                              <span className="text-[10.5px] tabular-nums text-muted-foreground/55">{sla.remaining}</span>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                              <div
+                                className={cn("h-full rounded-full transition-all duration-500", meter.bar)}
+                                style={{ width: `${meterPct}%` }}
+                              />
+                            </div>
+                          </>
+                        )}
                       </div>
                     </TableCell>
 

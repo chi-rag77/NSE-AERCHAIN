@@ -6,11 +6,11 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Clock, User, StickyNote, CheckCircle2, XCircle,
   Lock, ArrowDownLeft, ArrowUpRight, AlertTriangle, Timer,
-  CircleDot, CalendarClock,
+  CircleDot, CalendarClock, Info,
 } from "lucide-react";
 import { format, differenceInMinutes, parseISO, addHours, addMinutes } from "date-fns";
 import {
-  requesterDisplayName, ticketDept, computeSLA,
+  requesterDisplayName, ticketDept, computeSLA, SLA_NOT_APPLICABLE_MESSAGE,
   SLA_LABELS, SLA_ACK_MINUTES,
   SLA_RESOLUTION_HOURS, SLA_DONE_STATUSES, SLA_PAUSED_STATUS,
   PRIORITY_META, STATUS_META, initials,
@@ -347,6 +347,12 @@ const BreachHero = ({ ticket, milestones }: { ticket: Ticket; milestones: Milest
       label: "PAUSED",
       icon: <Timer className="h-4 w-4" />,
     },
+    not_applicable: {
+      bg: "from-slate-500 via-slate-600 to-slate-700 dark:from-slate-800 dark:via-slate-800/80",
+      badge: "bg-white/20 text-white border-white/30",
+      label: "SLA NOT TRACKED",
+      icon: <Info className="h-4 w-4" />,
+    },
   };
 
   const h = heroStyle[sla.state] ?? heroStyle.on_track;
@@ -368,6 +374,11 @@ const BreachHero = ({ ticket, milestones }: { ticket: Ticket; milestones: Milest
             {sla.remaining} remaining
           </span>
         )}
+        {sla.state === "not_applicable" && (
+          <span className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-medium">
+            No SLA on Requirement tickets
+          </span>
+        )}
         <span className="ml-auto font-mono text-[11px] font-bold opacity-70">#{ticket.id}</span>
       </div>
 
@@ -380,7 +391,7 @@ const BreachHero = ({ ticket, milestones }: { ticket: Ticket; milestones: Milest
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] font-medium opacity-80">
         <span className="inline-flex items-center gap-1.5">
           <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", h.badge)}>
-            {slaLabel.severity.split("—")[0].trim()}
+            {sla.state === "not_applicable" ? "Requirement" : slaLabel.severity.split("—")[0].trim()}
           </span>
         </span>
         <span className="inline-flex items-center gap-1.5">
@@ -398,15 +409,21 @@ const BreachHero = ({ ticket, milestones }: { ticket: Ticket; milestones: Milest
       </div>
 
       {/* Progress strip */}
-      <div className="mt-4 flex items-center gap-3">
-        <div className="flex-1 overflow-hidden rounded-full bg-white/20 h-1.5">
-          <div
-            className="h-full rounded-full bg-white transition-all duration-700"
-            style={{ width: `${(met / milestones.length) * 100}%` }}
-          />
+      {sla.state === "not_applicable" ? (
+        <p className="mt-4 text-[11.5px] font-medium leading-snug opacity-85">
+          {SLA_NOT_APPLICABLE_MESSAGE}
+        </p>
+      ) : (
+        <div className="mt-4 flex items-center gap-3">
+          <div className="flex-1 overflow-hidden rounded-full bg-white/20 h-1.5">
+            <div
+              className="h-full rounded-full bg-white transition-all duration-700"
+              style={{ width: `${(met / milestones.length) * 100}%` }}
+            />
+          </div>
+          <span className="shrink-0 text-[11px] font-bold opacity-80">{met}/{milestones.length} milestones</span>
         </div>
-        <span className="shrink-0 text-[11px] font-bold opacity-80">{met}/{milestones.length} milestones</span>
-      </div>
+      )}
     </div>
   );
 };
@@ -436,6 +453,7 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
     sla.state === "breached" ? "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300" :
     sla.state === "attention" ? "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" :
     sla.state === "paused" ? "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" :
+    sla.state === "not_applicable" ? "bg-slate-100 text-slate-500 dark:bg-slate-500/15 dark:text-slate-300" :
     "bg-[#6B4EFF]/10 text-[#6B4EFF] dark:text-violet-300";
 
   return (
@@ -457,25 +475,36 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
                   {sla.label}
                 </span>
               </div>
-              <div className="flex gap-0">
-                {/* Circular gauge */}
-                <div className="flex shrink-0 flex-col items-center justify-center border-r border-border/40 px-5 py-5 gap-1">
-                  <CircularGauge
-                    met={milestones.filter(m => m.status === "met").length}
-                    total={milestones.length}
-                    state={computeSLA(ticket).state}
-                  />
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">SLA Health</span>
-                  <span className="text-[18px] font-extrabold text-foreground">
-                    {Math.round((milestones.filter(m => m.status === "met").length / milestones.length) * 100)}%
+              {sla.state === "not_applicable" ? (
+                <div className="flex items-start gap-3 px-4 py-5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-500/15 dark:text-slate-300">
+                    <Info className="h-4 w-4" />
                   </span>
+                  <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+                    {SLA_NOT_APPLICABLE_MESSAGE}
+                  </p>
                 </div>
+              ) : (
+                <div className="flex gap-0">
+                  {/* Circular gauge */}
+                  <div className="flex shrink-0 flex-col items-center justify-center border-r border-border/40 px-5 py-5 gap-1">
+                    <CircularGauge
+                      met={milestones.filter(m => m.status === "met").length}
+                      total={milestones.length}
+                      state={computeSLA(ticket).state}
+                    />
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">SLA Health</span>
+                    <span className="text-[18px] font-extrabold text-foreground">
+                      {Math.round((milestones.filter(m => m.status === "met").length / milestones.length) * 100)}%
+                    </span>
+                  </div>
 
-                {/* DNA Strand */}
-                <div className="flex-1 px-4 py-5">
-                  <DNAStrand milestones={milestones} />
+                  {/* DNA Strand */}
+                  <div className="flex-1 px-4 py-5">
+                    <DNAStrand milestones={milestones} />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* ── Original description ────────────────────────────────────── */}
