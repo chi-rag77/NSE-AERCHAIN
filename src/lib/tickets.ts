@@ -143,7 +143,7 @@ export const applySlaRules = (rules: SlaRule[]) => {
   });
 };
 
-export type SLAState = "on_track" | "attention" | "breached" | "met" | "paused";
+export type SLAState = "on_track" | "attention" | "breached" | "met" | "paused" | "not_applicable";
 
 export interface SLAInfo {
   state: SLAState;
@@ -157,7 +157,33 @@ export interface SLAInfo {
   dot: string;
 }
 
+// "Requirement" tickets are feature/enhancement asks, not support incidents —
+// no resolution SLA is tracked against them. Freshdesk "Type" is the source of
+// truth for this classification.
+export const SLA_EXEMPT_TICKET_TYPES = ["requirement"];
+
+export const isSlaExempt = (t: Ticket): boolean =>
+  SLA_EXEMPT_TICKET_TYPES.includes((t.ticket_type ?? "").trim().toLowerCase());
+
+/** Friendly, non-alarming copy shown wherever an exempt ticket's SLA would normally appear. */
+export const SLA_NOT_APPLICABLE_MESSAGE =
+  "Requirement tickets are tracked as feature requests, not support incidents — no SLA clock runs on them.";
+
 export const computeSLA = (t: Ticket): SLAInfo => {
+  // Requirement-type tickets never had an SLA clock started — show a clear
+  // "not applicable" state instead of a misleading breached/on-track verdict.
+  if (isSlaExempt(t)) {
+    return {
+      state: "not_applicable",
+      label: "Not SLA-Tracked",
+      remaining: SLA_NOT_APPLICABLE_MESSAGE,
+      remainingMinutes: Infinity,
+      percent: 100,
+      tone: "text-muted-foreground",
+      dot: "bg-slate-300 dark:bg-slate-600",
+    };
+  }
+
   // Resolved / closed tickets: judge by the ACTUAL resolution time (updated_at
   // is the best available proxy) against the resolution deadline — not a blanket
   // "met". This keeps the header verdict, the tickets table, and the drawer's
@@ -266,16 +292,21 @@ export const computeMetrics = (tickets: Ticket[]): DashboardMetrics => {
   const open = total - resolved;
   const critical = tickets.filter((t) => t.priority === 4 && t.status === 2).length;
 
-  let breached = 0, attention = 0, onTrack = 0;
+  // Requirement tickets carry no SLA clock — exclude them from the
+  // breach/attention/on-track tallies and the compliance % entirely, rather
+  // than letting them fall into "on track" by default.
+  let breached = 0, attention = 0, onTrack = 0, slaTracked = 0;
   tickets.forEach((t) => {
     const s = computeSLA(t).state;
+    if (s === "not_applicable") return;
+    slaTracked++;
     if (s === "breached") breached++;
     else if (s === "attention") attention++;
     else onTrack++;
   });
 
   const active = open || 1;
-  const slaCompliance = total === 0 ? 100 : Math.round(((total - breached) / total) * 100);
+  const slaCompliance = slaTracked === 0 ? 100 : Math.round(((slaTracked - breached) / slaTracked) * 100);
   // Health: weighted blend of SLA health and resolution rate, clamped 0-100.
   const resolutionRate = total === 0 ? 100 : (resolved / total) * 100;
   const breachPenalty = (breached / active) * 100;
