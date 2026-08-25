@@ -17,8 +17,13 @@ interface AuthState {
   profile: Profile | null;
   isAdmin: boolean;
   loading: boolean;
-  /** True when auth is unavailable (no Supabase) — app runs in open demo mode. */
+  /** True when auth is unavailable (no Supabase) — local/demo fallback where
+   *  nothing can be gated at all, admin pages included. */
   authDisabled: boolean;
+  /** True when VITE_PUBLIC_MODE=true — Supabase IS configured, but Dashboard
+   *  and Tickets are deliberately open to anonymous visitors. Unlike
+   *  authDisabled, this never unlocks Reports or Admin — see guards.tsx. */
+  publicMode: boolean;
   signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -26,11 +31,18 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
+// Explicit escape hatch to let anonymous visitors view Dashboard + Tickets
+// with no login. Off unless VITE_PUBLIC_MODE=true is set at build time, so
+// this never flips on by accident. Reports, Admin, and the manual sync
+// button stay behind a real login regardless — see guards.tsx / Header.tsx.
+const PUBLIC_MODE = (import.meta.env.VITE_PUBLIC_MODE ?? "").toLowerCase() === "true";
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const authDisabled = !isSupabaseConfigured;
+  const publicMode = PUBLIC_MODE && isSupabaseConfigured;
 
   const loadProfile = useCallback(async (uid: string): Promise<Profile | null> => {
     if (!supabase) return null;
@@ -99,7 +111,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     <AuthContext.Provider value={{
       session, profile,
       isAdmin: !!profile?.is_admin,
-      loading, authDisabled,
+      loading, authDisabled, publicMode,
       signIn, signOut, refreshProfile,
     }}>
       {children}

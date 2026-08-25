@@ -30,9 +30,11 @@ interface Props {
   tickets: Ticket[];
   onSelectTicket: (t: Ticket) => void;
   onRefresh: () => void;
+  /** Hide the "Refresh data" action for anonymous visitors in public mode. */
+  canRefresh?: boolean;
 }
 
-export const CommandPalette = ({ open, onOpenChange, tickets, onSelectTicket, onRefresh }: Props) => {
+export const CommandPalette = ({ open, onOpenChange, tickets, onSelectTicket, onRefresh, canRefresh = true }: Props) => {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
 
@@ -79,9 +81,11 @@ export const CommandPalette = ({ open, onOpenChange, tickets, onSelectTicket, on
         <CommandSeparator />
 
         <CommandGroup heading="Actions">
-          <CommandItem onSelect={() => go(onRefresh)}>
-            <RefreshCw className="mr-2 h-4 w-4" /> Refresh data
-          </CommandItem>
+          {canRefresh && (
+            <CommandItem onSelect={() => go(onRefresh)}>
+              <RefreshCw className="mr-2 h-4 w-4" /> Refresh data
+            </CommandItem>
+          )}
           <CommandItem onSelect={() => go(() => {})}>
             <Plus className="mr-2 h-4 w-4" /> New ticket
           </CommandItem>
