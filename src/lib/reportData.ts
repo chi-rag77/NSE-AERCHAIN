@@ -28,7 +28,7 @@ export const resolutionHours = (t: Ticket): number | null => {
 export const metSLA = (t: Ticket): boolean => {
   // Requirement tickets have no SLA clock — never count them as breached.
   if (isSlaExempt(t)) return true;
-  const target = resolutionHoursFor(t.company_name, t.priority);
+  const target = resolutionHoursFor(t.priority);
   const rh = resolutionHours(t);
   if (rh !== null) return rh <= target;
   return computeSLA(t).state !== "breached";
