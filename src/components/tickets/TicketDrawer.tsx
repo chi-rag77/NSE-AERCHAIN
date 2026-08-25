@@ -1,5 +1,5 @@
 import DOMPurify from "dompurify";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,7 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Clock, User, StickyNote, CheckCircle2, XCircle,
-  Lock, ArrowDownLeft, ArrowUpRight, AlertTriangle, Timer,
+  Lock, AlertTriangle, Timer,
   CircleDot, CalendarClock, Info, RefreshCw, Loader2, Flag,
   Lightbulb, BarChart3, Sparkles,
 } from "lucide-react";
@@ -321,7 +321,6 @@ const BreachHero = ({ ticket, milestones }: { ticket: Ticket; milestones: Milest
   const s = STATUS_META[ticket.status] ?? { label: `Status ${ticket.status}`, tone: "" };
   const requester = requesterDisplayName(ticket);
   const slaLabel = SLA_LABELS[ticket.priority as Priority] ?? SLA_LABELS[1];
-  const met = milestones.filter(m => m.status === "met").length;
 
   const heroStyle = {
     breached: {
@@ -415,22 +414,22 @@ const BreachHero = ({ ticket, milestones }: { ticket: Ticket; milestones: Milest
         </span>
       </div>
 
-      {/* Progress strip */}
+      {/* Deadline fact — concrete info, not a repeat of the SLA Journey card's
+          milestone count right below it (that duplication was part of what
+          made this overlay feel cluttered). */}
       {sla.state === "not_applicable" ? (
         <p className="mt-4 text-[11.5px] font-medium leading-snug opacity-85">
           {SLA_NOT_APPLICABLE_MESSAGE}
         </p>
-      ) : (
-        <div className="mt-4 flex items-center gap-3">
-          <div className="flex-1 overflow-hidden rounded-full bg-white/20 h-1.5">
-            <div
-              className="h-full rounded-full bg-white transition-all duration-700"
-              style={{ width: `${(met / milestones.length) * 100}%` }}
-            />
-          </div>
-          <span className="shrink-0 text-[11px] font-bold opacity-80">{met}/{milestones.length} milestones</span>
-        </div>
-      )}
+      ) : (() => {
+          const resolution = milestones.find((m) => m.id === "resolution");
+          return resolution ? (
+            <div className="mt-4 flex items-center gap-1.5 text-[12px] font-semibold opacity-90">
+              <CalendarClock className="h-3.5 w-3.5 opacity-70" />
+              Due {format(resolution.deadline, "d MMM, h:mm a")} · {resolution.detail}
+            </div>
+          ) : null;
+        })()}
     </div>
   );
 };
@@ -670,6 +669,106 @@ const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
   );
 };
 
+// ─── Conversation thread — chat-style chain ─────────────────────────────────
+// Customer on the left, agent on the right, strict chronological order (first
+// message → agent reply → next customer reply → …) so the back-and-forth is
+// readable at a glance instead of a flat stack of identical-looking cards.
+// Private notes break the chain deliberately — they're internal asides the
+// customer never saw, not part of the reply chain, so they render as their
+// own centered card rather than a chat bubble on either side.
+// Keyed by ticket.id from the parent, so switching tickets remounts this
+// (and re-runs the scroll-to-latest effect) instead of carrying over state.
+
+const ConversationThread = ({ ticket, conversations, ackId }: { ticket: Ticket; conversations: Conversation[]; ackId: number | null }) => {
+  const requester = requesterDisplayName(ticket);
+  const lastRef = useRef<HTMLDivElement>(null);
+
+  // Open straight to the latest message — the newest update is what someone
+  // opening a ticket wants first, not the oldest message after a long scroll.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => lastRef.current?.scrollIntoView({ block: "end" }));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  if (conversations.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/60 py-12 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary/60">
+          <StickyNote className="h-5 w-5 text-muted-foreground/50" />
+        </div>
+        <div>
+          <p className="text-[13px] font-semibold text-foreground/70">No updates yet</p>
+          <p className="text-[11.5px] text-muted-foreground/60">Add the first note or reply below</p>
+        </div>
+      </div>
+    );
+  }
+
+  const sorted = [...conversations].sort((a, b) => +parseISO(a.created_at) - +parseISO(b.created_at));
+
+  return (
+    <div className="space-y-3">
+      {sorted.map((conv, i) => {
+        const isAgent = !conv.incoming;
+        const author = conv.incoming ? requester : (ticket.responder_name ?? "Aerchain Support");
+        const html = sanitize(conv.body || conv.body_text || "");
+        const isAck = conv.id === ackId;
+        const refProp = i === sorted.length - 1 ? { ref: lastRef } : {};
+        const when = format(new Date(conv.created_at), "MMM d, h:mm a");
+
+        if (conv.private) {
+          return (
+            <div key={conv.id} {...refProp} className="mx-auto w-[92%] rounded-xl border border-amber-200/60 bg-amber-50/50 p-3 dark:border-amber-500/20 dark:bg-amber-500/5">
+              <div className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold text-amber-700 dark:text-amber-300">
+                <Lock className="h-3 w-3" /> Private note · {author}
+                <span className="ml-auto font-normal text-amber-700/60 dark:text-amber-300/60">{when}</span>
+              </div>
+              <div className="fd-html text-[13px] text-foreground/85" dangerouslySetInnerHTML={{ __html: html }} />
+            </div>
+          );
+        }
+
+        return (
+          <div key={conv.id} {...refProp} className={cn("flex items-end gap-2", isAgent ? "justify-end" : "justify-start")}>
+            {!isAgent && (
+              <Avatar className="h-7 w-7 shrink-0 ring-2 ring-background">
+                <AvatarFallback className={cn("text-[10px] font-bold text-white", avatarColor(author))}>{initials(author)}</AvatarFallback>
+              </Avatar>
+            )}
+            <div className="min-w-0 max-w-[78%]">
+              <div className={cn("mb-1 flex items-center gap-1.5 text-[10.5px]", isAgent ? "justify-end" : "justify-start")}>
+                {!isAgent && <span className="font-semibold text-foreground">{author}</span>}
+                {isAck && (
+                  <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
+                    <CheckCircle2 className="h-2.5 w-2.5" /> Ack
+                  </span>
+                )}
+                <span className="text-muted-foreground/60">{when}</span>
+                {isAgent && <span className="font-semibold text-foreground">{author}</span>}
+              </div>
+              <div className={cn(
+                "rounded-2xl border p-3.5 shadow-sm",
+                isAgent
+                  ? "rounded-tr-sm border-violet-100 bg-violet-50/60 dark:border-violet-500/15 dark:bg-violet-500/10"
+                  : "rounded-tl-sm border-border/50 bg-card"
+              )}>
+                <div className="fd-html text-foreground/85" dangerouslySetInnerHTML={{ __html: html }} />
+              </div>
+            </div>
+            {isAgent && (
+              <Avatar className="h-7 w-7 shrink-0 ring-2 ring-background">
+                <AvatarFallback className="bg-gradient-to-br from-[#6B4EFF] to-[#8b6dff] text-[10px] font-bold text-white">
+                  {initials(author)}
+                </AvatarFallback>
+              </Avatar>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 // ─── Main TicketDrawer ────────────────────────────────────────────────────────
 
 interface TicketDrawerProps {
@@ -780,76 +879,7 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
             </div>
 
             {/* ── Conversation thread ─────────────────────────────────────── */}
-            {conversations.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/60 py-12 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary/60">
-                  <StickyNote className="h-5 w-5 text-muted-foreground/50" />
-                </div>
-                <div>
-                  <p className="text-[13px] font-semibold text-foreground/70">No updates yet</p>
-                  <p className="text-[11.5px] text-muted-foreground/60">Add the first note or reply below</p>
-                </div>
-              </div>
-            ) : (
-              <div className="relative space-y-4">
-                {/* Timeline rail behind the avatars */}
-                {conversations.length > 1 && (
-                  <span aria-hidden className="absolute left-4 top-3 bottom-3 w-px bg-border/60" />
-                )}
-                {conversations.map((conv) => {
-                  const author = conv.incoming ? requester : "Support Agent";
-                  const html = sanitize(conv.body || conv.body_text || "");
-                  const isAck = conv.id === ackId;
-                  return (
-                    <div key={conv.id} className="relative flex gap-3">
-                      <Avatar className="mt-0.5 h-8 w-8 shrink-0 z-10 ring-2 ring-background">
-                        <AvatarFallback className={cn(
-                          "text-[10px] font-bold text-white",
-                          conv.incoming ? avatarColor(author) : "bg-gradient-to-br from-[#6B4EFF] to-[#8b6dff]"
-                        )}>
-                          {initials(author)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-1 flex items-center gap-2">
-                          <span className="text-[12.5px] font-semibold text-foreground">{author}</span>
-                          <span className={cn(
-                            "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[9.5px] font-semibold",
-                            conv.incoming ? "bg-sky-50 text-sky-600 dark:bg-sky-500/10" : "bg-violet-50 text-violet-600 dark:bg-violet-500/10"
-                          )}>
-                            {conv.incoming ? <ArrowDownLeft className="h-2.5 w-2.5" /> : <ArrowUpRight className="h-2.5 w-2.5" />}
-                            {conv.incoming ? "Incoming" : "Reply"}
-                          </span>
-                          {isAck && (
-                            <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
-                              <CheckCircle2 className="h-2.5 w-2.5" /> Acknowledgment
-                            </span>
-                          )}
-                          {conv.private && (
-                            <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-amber-600 dark:bg-amber-500/10">
-                              <Lock className="h-2.5 w-2.5" /> Private
-                            </span>
-                          )}
-                          <span className="ml-auto text-[10.5px] text-muted-foreground/60">
-                            {format(new Date(conv.created_at), "MMM d, h:mm a")}
-                          </span>
-                        </div>
-                        <div className={cn(
-                          "rounded-2xl rounded-tl-sm border p-3.5 shadow-sm transition-shadow hover:shadow-md",
-                          conv.private
-                            ? "border-amber-200/60 bg-amber-50/50 dark:border-amber-500/20 dark:bg-amber-500/5"
-                            : conv.incoming
-                              ? "border-border/50 bg-card"
-                              : "border-violet-100 bg-violet-50/40 dark:border-violet-500/15 dark:bg-violet-500/5"
-                        )}>
-                          <div className="fd-html text-foreground/85" dangerouslySetInnerHTML={{ __html: html }} />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <ConversationThread key={ticket.id} ticket={ticket} conversations={conversations} ackId={ackId} />
           </div>
         </ScrollArea>
       </SheetContent>
