@@ -1,16 +1,23 @@
 import DOMPurify from "dompurify";
+import { useState } from "react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Ticket, Conversation, Priority } from "../../types/freshdesk";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Clock, User, StickyNote, CheckCircle2, XCircle,
   Lock, ArrowDownLeft, ArrowUpRight, AlertTriangle, Timer,
-  CircleDot, CalendarClock, Info,
+  CircleDot, CalendarClock, Info, RefreshCw, Loader2, Flag,
+  Lightbulb, BarChart3, Sparkles,
 } from "lucide-react";
 import { format, differenceInMinutes, parseISO, addHours, addMinutes } from "date-fns";
+import { analyzeTicket, submitDispute } from "@/services/aiAnalysis";
+import { AIAnalysis, AIAnalysisCitation } from "@/types/aiAnalysis";
 import {
-  requesterDisplayName, ticketDept, computeSLA, SLA_NOT_APPLICABLE_MESSAGE,
+  requesterDisplayName, ticketDept, ticketCompany, computeSLA, SLA_NOT_APPLICABLE_MESSAGE,
   SLA_LABELS, SLA_ACK_MINUTES,
   SLA_RESOLUTION_HOURS, SLA_DONE_STATUSES, SLA_PAUSED_STATUS,
   PRIORITY_META, STATUS_META, initials,
@@ -428,6 +435,233 @@ const BreachHero = ({ ticket, milestones }: { ticket: Ticket; milestones: Milest
   );
 };
 
+// ─── SLA Autopsy — AI Analysis panel ───────────────────────────────────────────
+// Idle until the user clicks the (i) trigger — nothing here ever calls the AI
+// on its own. Keyed by ticket.id from the parent, so switching tickets in the
+// drawer remounts this fresh instead of leaking one ticket's analysis into
+// another's.
+
+const STATUS_BAR_COLOR: Record<number, string> = {
+  2: "bg-blue-500", 3: "bg-indigo-500", 4: "bg-emerald-500", 5: "bg-slate-400",
+  7: "bg-amber-500", 8: "bg-violet-500", 9: "bg-orange-500",
+};
+
+const CONFIDENCE_META: Record<AIAnalysis["confidence"], { label: string; tone: string }> = {
+  high: { label: "High confidence", tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" },
+  partial: { label: "Partial data", tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" },
+  low: { label: "Limited data", tone: "bg-slate-100 text-slate-500 dark:bg-slate-500/15 dark:text-slate-300" },
+};
+
+/** Renders narrative text, turning S1/M2-style citation tokens into hoverable evidence chips. */
+const renderNarrative = (text: string, citations: AIAnalysisCitation[]) => {
+  const byMarker = new Map(citations.map((c) => [c.marker, c]));
+  return text.split(/(\b(?:S|M)\d+\b)/g).map((part, i) => {
+    const c = byMarker.get(part);
+    if (!c) return <span key={i}>{part}</span>;
+    const when = c.at ? format(parseISO(c.at), "d MMM, h:mm a") : null;
+    return (
+      <sup
+        key={i}
+        title={[c.label, when, c.detail].filter(Boolean).join(" · ")}
+        className="mx-0.5 cursor-help rounded bg-[#6B4EFF]/10 px-1 py-0.5 font-mono text-[9px] font-bold not-italic text-[#6B4EFF] dark:bg-violet-500/15 dark:text-violet-300"
+      >
+        {part}
+      </sup>
+    );
+  });
+};
+
+const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
+  const [status, setStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
+  const [data, setData] = useState<AIAnalysis | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // Client-facing summary is the default view — this panel is meant to be shown
+  // to NSE, not just kept internal. The evidence-heavy version is opt-in.
+  const [showInternal, setShowInternal] = useState(false);
+  const [disputeOpen, setDisputeOpen] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [disputeState, setDisputeState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+
+  const run = async (force: boolean) => {
+    setStatus("loading");
+    setError(null);
+    const res = await analyzeTicket(ticket.id, { force });
+    if (res.ok && res.data) {
+      setData(res.data);
+      setStatus("loaded");
+    } else {
+      setError(res.error ?? "AI analysis failed");
+      setStatus("error");
+    }
+  };
+
+  const sendDispute = async () => {
+    if (!disputeReason.trim()) return;
+    setDisputeState("sending");
+    const res = await submitDispute(ticket.id, disputeReason.trim(), data?.generated_at);
+    setDisputeState(res.ok ? "sent" : "error");
+  };
+
+  return (
+    <div className="rounded-2xl border border-border/60 bg-card overflow-hidden shadow-sm">
+      <div className="flex items-center justify-between border-b border-border/40 bg-secondary/20 px-4 py-3">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+          <Sparkles className="h-3 w-3 text-[#6B4EFF]" /> AI Analysis
+        </span>
+        {status === "loaded" && data && (
+          <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", CONFIDENCE_META[data.confidence].tone)}>
+            <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+            {CONFIDENCE_META[data.confidence].label}
+          </span>
+        )}
+      </div>
+
+      <div className="p-4">
+        {status === "idle" && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[12.5px] text-muted-foreground max-w-[34ch]">
+              Understand why this ticket took as long as it did — status by status, with evidence.
+            </p>
+            <Button size="sm" className="gap-1.5 shrink-0 bg-[#6B4EFF] hover:bg-[#5a3de8]" onClick={() => run(false)}>
+              <Info className="h-3.5 w-3.5" /> Analyze
+            </Button>
+          </div>
+        )}
+
+        {status === "loading" && (
+          <div className="flex items-center gap-2 py-3 text-[12.5px] text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin text-[#6B4EFF]" /> Analyzing ticket history…
+          </div>
+        )}
+
+        {status === "error" && (
+          <div className="space-y-2">
+            <p className="text-[12.5px] text-rose-600 dark:text-rose-400">{error}</p>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => run(false)}>
+              <RefreshCw className="h-3.5 w-3.5" /> Try again
+            </Button>
+          </div>
+        )}
+
+        {status === "loaded" && data && (
+          <div className="space-y-4">
+            {data.warning && (
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-700 dark:text-amber-300">
+                {data.warning}
+              </div>
+            )}
+
+            {/* Timeline */}
+            <div>
+              <div className="mb-1.5 flex h-6 w-full overflow-hidden rounded-md">
+                {data.segments.map((s) => (
+                  <div
+                    key={s.index}
+                    title={`${s.label} — ${format(parseISO(s.startsAt), "d MMM, h:mm a")} → ${format(parseISO(s.endsAt), "d MMM, h:mm a")}`}
+                    className={cn("h-full min-w-[3%] first:rounded-l-md last:rounded-r-md", STATUS_BAR_COLOR[s.status] ?? "bg-slate-400")}
+                    style={{ width: `${Math.max(3, (s.minutes / Math.max(1, data.segments.reduce((a, b) => a + b.minutes, 0))) * 100)}%` }}
+                  />
+                ))}
+              </div>
+              <div className="flex justify-between text-[10px] font-mono text-muted-foreground/60">
+                <span>{format(parseISO(ticket.created_at), "d MMM")}, created</span>
+                <span>{data.segments.at(-1) ? format(parseISO(data.segments.at(-1)!.endsAt), "d MMM") : "now"}</span>
+              </div>
+            </div>
+
+            {/* Narrative — client-facing summary by default */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {showInternal ? "Internal detail (with evidence)" : "Client-facing summary"}
+              </span>
+              <label className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+                Show internal detail
+                <Switch checked={showInternal} onCheckedChange={setShowInternal} className="scale-75" />
+              </label>
+            </div>
+            <p className="text-[13px] leading-relaxed text-foreground -mt-2">
+              {showInternal
+                ? (data.narrative ? renderNarrative(data.narrative, data.citations) : "No narrative available.")
+                : data.formal_narrative}
+            </p>
+            {showInternal && <p className="text-[11px] text-muted-foreground/70 -mt-2">{data.completeness_note}</p>}
+
+            {/* Attribution split */}
+            <div>
+              <div className="mb-1.5 flex h-2.5 w-full overflow-hidden rounded-full bg-secondary">
+                <div className="h-full bg-[#6B4EFF]" style={{ width: `${data.attribution.aerchain}%` }} />
+                <div className="h-full bg-sky-500" style={{ width: `${data.attribution.nse}%` }} />
+                <div className="h-full bg-amber-500" style={{ width: `${data.attribution.engineering}%` }} />
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10.5px] text-muted-foreground">
+                <span><i className="inline-block h-2 w-2 rounded-sm bg-[#6B4EFF] mr-1 align-[-1px]" />Aerchain support · {data.attribution.aerchain}%</span>
+                <span><i className="inline-block h-2 w-2 rounded-sm bg-sky-500 mr-1 align-[-1px]" />Waiting on {ticketCompany(ticket)} · {data.attribution.nse}%</span>
+                <span><i className="inline-block h-2 w-2 rounded-sm bg-amber-500 mr-1 align-[-1px]" />Engineering · {data.attribution.engineering}%</span>
+              </div>
+            </div>
+
+            {/* Benchmark */}
+            {data.benchmark && (
+              <div className="flex items-start gap-2 rounded-lg bg-secondary/40 px-3 py-2 text-[11.5px] text-foreground">
+                <BarChart3 className="h-3.5 w-3.5 shrink-0 mt-0.5 text-muted-foreground" />
+                <span>
+                  Similar <span className="font-mono">{ticket.ticket_type ?? "tickets"}</span> resolve in a median of{" "}
+                  <b>{data.benchmark.medianHours}h</b> ({data.benchmark.sampleSize} tickets). This one: <b>{data.benchmark.ticketHours}h</b>
+                  {data.benchmark.multiple != null && <> ({data.benchmark.multiple}× the median)</>}.
+                </span>
+              </div>
+            )}
+
+            {/* Prevention tip */}
+            {data.prevention_tip && (
+              <div className="flex items-start gap-2 rounded-lg bg-[#6B4EFF]/5 px-3 py-2 text-[11.5px] text-foreground">
+                <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5 text-[#6B4EFF]" />
+                <span>{data.prevention_tip}</span>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <Button size="sm" variant="outline" className="gap-1.5 h-7 text-[11.5px]" onClick={() => run(true)}>
+                <RefreshCw className="h-3 w-3" /> Regenerate
+              </Button>
+              {disputeState !== "sent" && (
+                <Button size="sm" variant="ghost" className="gap-1.5 h-7 text-[11.5px] text-muted-foreground" onClick={() => setDisputeOpen((v) => !v)}>
+                  <Flag className="h-3 w-3" /> Dispute this analysis
+                </Button>
+              )}
+              {disputeState === "sent" && (
+                <span className="text-[11.5px] text-emerald-600 dark:text-emerald-400">Filed — thanks, this will be reviewed.</span>
+              )}
+              <span className="ml-auto text-[10px] font-mono text-muted-foreground/50">
+                {data.generated ? "Freshly generated" : "From cache · no AI credits used"}
+              </span>
+            </div>
+
+            {disputeOpen && disputeState !== "sent" && (
+              <div className="space-y-2 rounded-lg border border-border/50 p-3">
+                <Textarea
+                  value={disputeReason}
+                  onChange={(e) => setDisputeReason(e.target.value)}
+                  placeholder="What's wrong with this analysis? (e.g. a status change was logged late)"
+                  className="min-h-[64px] text-[12.5px]"
+                />
+                <div className="flex items-center gap-2">
+                  <Button size="sm" className="h-7 text-[11.5px]" disabled={!disputeReason.trim() || disputeState === "sending"} onClick={sendDispute}>
+                    {disputeState === "sending" ? "Sending…" : "Submit"}
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-7 text-[11.5px]" onClick={() => setDisputeOpen(false)}>Cancel</Button>
+                  {disputeState === "error" && <span className="text-[11px] text-rose-600">Couldn't send — try again.</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ─── Main TicketDrawer ────────────────────────────────────────────────────────
 
 interface TicketDrawerProps {
@@ -506,6 +740,9 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
                 </div>
               )}
             </div>
+
+            {/* ── SLA Autopsy: AI Analysis (click to run, never automatic) ── */}
+            <AIAnalysisPanel key={ticket.id} ticket={ticket} />
 
             {/* ── Original description ────────────────────────────────────── */}
             {ticket.description && (
