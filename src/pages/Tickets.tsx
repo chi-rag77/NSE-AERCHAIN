@@ -40,8 +40,8 @@ const Kpi = ({
   </div>
 );
 
-const Body = ({ tickets, isLoading, openTicket, companyLabel }: {
-  tickets: Ticket[]; isLoading: boolean; openTicket: (t: Ticket) => void; companyLabel: string;
+const Body = ({ tickets, isLoading, openTicket }: {
+  tickets: Ticket[]; isLoading: boolean; openTicket: (t: Ticket) => void;
 }) => {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<TabKey>("all");
@@ -103,14 +103,9 @@ const Body = ({ tickets, isLoading, openTicket, companyLabel }: {
       {/* ── Header row: title + KPIs ─────────────────────────────────── */}
       <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="font-display text-[26px] font-extrabold tracking-tight text-foreground">
-              Support Tickets
-            </h1>
-            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-bold text-primary ring-1 ring-primary/15">
-              {companyLabel}
-            </span>
-          </div>
+          <h1 className="font-display text-[26px] font-extrabold tracking-tight text-foreground">
+            Support Tickets
+          </h1>
           <p className="mt-1 text-[13px] text-muted-foreground">
             Live Freshdesk sync · <span className="font-semibold text-foreground/70">{tickets.length}</span> tickets tracked
           </p>

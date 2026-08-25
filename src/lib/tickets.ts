@@ -52,10 +52,8 @@ const BIZ_TO_CAL = (bizHours: number) => Math.round((bizHours / 9) * 24);
 // `sla_rules` table at runtime) can override the defaults in place. Consumers
 // read them at call-time, so applySlaRules() takes effect on the next render.
 //
-// This map is the DEFAULT ruleset — it applies to every customer. A customer
-// may additionally have an OVERRIDE ruleset (see SLA_OVERRIDES below); the
-// dashboard is multi-customer and "custom SLA for NSE, standard for everyone
-// else" is expressed as a default set + an NSE override.
+// This dashboard serves a single customer (NSE) — one global ruleset, no
+// per-customer overrides.
 export const SLA_RESOLUTION_HOURS: Record<Priority, number> = {
   4: BIZ_TO_CAL(8),    // Severity 1 — Critical: 8 biz hrs ≈ 21 cal hrs
   3: BIZ_TO_CAL(32),   // Severity 2 — High:     32 biz hrs ≈ 85 cal hrs
@@ -83,63 +81,25 @@ export interface SlaRule {
   severity_label: string;
   resolution_hours: number;
   resolution_label?: string | null;
-  /** '' / undefined → the shared default ruleset; otherwise a per-customer override. */
-  company_name?: string | null;
 }
 
-/** Canonical key for a company name (case/whitespace-insensitive). '' = default. */
-export const companyKey = (company?: string | null): string =>
-  (company ?? "").trim().toUpperCase();
+/** Resolution target (calendar hours) for a given priority. */
+export const resolutionHoursFor = (p: Priority): number => SLA_RESOLUTION_HOURS[p];
 
-/**
- * Per-customer overrides, keyed by companyKey(). Each entry only carries the
- * priorities that customer actually overrides; anything missing falls back to
- * the shared default (SLA_RESOLUTION_HOURS / SLA_LABELS).
- */
-interface CompanyOverride {
-  resolution_hours: Partial<Record<Priority, number>>;
-  labels: Partial<Record<Priority, { severity: string; workaround: string; resolution: string }>>;
-}
-export const SLA_OVERRIDES: Record<string, CompanyOverride> = {};
+/** Severity/resolution labels for a given priority. */
+export const slaLabelFor = (p: Priority) => SLA_LABELS[p];
 
-/** Resolution target (calendar hours) for a ticket's company + priority. */
-export const resolutionHoursFor = (company: string | null | undefined, p: Priority): number => {
-  const ov = SLA_OVERRIDES[companyKey(company)];
-  const hours = ov?.resolution_hours[p];
-  return hours != null ? hours : SLA_RESOLUTION_HOURS[p];
-};
-
-/** Severity/resolution labels for a ticket's company + priority. */
-export const slaLabelFor = (company: string | null | undefined, p: Priority) => {
-  const ov = SLA_OVERRIDES[companyKey(company)];
-  return ov?.labels[p] ?? SLA_LABELS[p];
-};
-
-/**
- * Apply admin-configured rules in place so the whole app picks them up.
- * Rows with an empty company_name update the shared default; rows with a
- * company_name populate that customer's override bucket.
- */
+/** Apply admin-configured rules in place so the whole app picks them up. */
 export const applySlaRules = (rules: SlaRule[]) => {
   rules.forEach((r) => {
     const p = r.priority as Priority;
     if (![1, 2, 3, 4].includes(p)) return;
-    const key = companyKey(r.company_name);
-    const label = {
+    SLA_RESOLUTION_HOURS[p] = r.resolution_hours;
+    SLA_LABELS[p] = {
       severity: r.severity_label,
       workaround: SLA_LABELS[p]?.workaround ?? "",
       resolution: r.resolution_label ?? SLA_LABELS[p]?.resolution ?? "",
     };
-    if (!key) {
-      // Default ruleset — mutate the shared maps in place.
-      SLA_RESOLUTION_HOURS[p] = r.resolution_hours;
-      SLA_LABELS[p] = label;
-    } else {
-      // Per-customer override.
-      const ov = (SLA_OVERRIDES[key] ??= { resolution_hours: {}, labels: {} });
-      ov.resolution_hours[p] = r.resolution_hours;
-      ov.labels[p] = label;
-    }
   });
 };
 
@@ -190,7 +150,7 @@ export const computeSLA = (t: Ticket): SLAInfo => {
   // resolution milestone all in agreement.
   if (SLA_DONE_STATUSES.includes(t.status)) {
     const created = parseISO(t.created_at);
-    const limit = addHours(created, resolutionHoursFor(t.company_name, t.priority));
+    const limit = addHours(created, resolutionHoursFor(t.priority));
     const resolvedAt = parseISO(t.updated_at);
     const overdue = differenceInMinutes(resolvedAt, limit); // >0 => resolved late
     if (overdue <= 0) {
@@ -209,7 +169,7 @@ export const computeSLA = (t: Ticket): SLAInfo => {
   }
 
   const created = parseISO(t.created_at);
-  const resHours = resolutionHoursFor(t.company_name, t.priority);
+  const resHours = resolutionHoursFor(t.priority);
   const limit = addHours(created, resHours);
   const totalMinutes = resHours * 60;
   const remainingMinutes = differenceInMinutes(limit, new Date());

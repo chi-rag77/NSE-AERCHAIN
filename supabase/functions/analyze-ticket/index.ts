@@ -109,15 +109,10 @@ function completenessNote(segments: Segment[]): string {
     : `${exact} of ${segments.length} status changes were captured directly; the rest are estimated from surrounding timestamps.`;
 }
 
-// ─── SLA target lookup (mirrors sla_rules resolution, company override → default → fallback) ──
+// ─── SLA target lookup (single global ruleset — falls back to the fixed defaults) ──
 async function getSlaTargetHours(admin: any, ticket: any): Promise<number | null> {
-  const company = (ticket.company_name ?? "").trim();
-  if (company) {
-    const { data } = await admin.from("sla_rules").select("resolution_hours").eq("company_name", company).eq("priority", ticket.priority).maybeSingle();
-    if (data?.resolution_hours) return data.resolution_hours;
-  }
-  const { data: def } = await admin.from("sla_rules").select("resolution_hours").eq("company_name", "").eq("priority", ticket.priority).maybeSingle();
-  if (def?.resolution_hours) return def.resolution_hours;
+  const { data } = await admin.from("sla_rules").select("resolution_hours").eq("priority", ticket.priority).maybeSingle();
+  if (data?.resolution_hours) return data.resolution_hours;
   return FALLBACK_SLA_HOURS[ticket.priority as number] ?? null;
 }
 
