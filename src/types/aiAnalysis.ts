@@ -47,6 +47,8 @@ export interface AIAnalysis {
   segments: AIAnalysisSegment[];
   attribution: AIAnalysisAttribution;
   benchmark: AIAnalysisBenchmark | null;
+  /** Short, concrete "the real reason" label — e.g. "Multi-team documentation verification". */
+  primary_cause: string | null;
   narrative: string | null;
   formal_narrative: string | null;
   prevention_tip: string | null;

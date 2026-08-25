@@ -187,14 +187,27 @@ Deno.serve(async (req) => {
       purged = removed?.length ?? 0;
     }
 
-    // ── 4. Conversations for the scoped tickets ────────────────────────────
+    // ── 4. Conversations for the scoped tickets — ALL pages, not just the
+    // first 100. A ticket with a long back-and-forth thread previously lost
+    // every message past #100 silently, which starved the AI analysis (and
+    // anything else reading conversations) of the messages that actually
+    // explain what happened. Capped at 30 pages (3,000 messages) purely as a
+    // runaway-loop safety valve — no real ticket should ever hit that.
     let convoCount = 0;
     if (SYNC_CONVOS) {
       for (const t of scoped) {
-        const res = await fetch(`${baseUrl}/tickets/${t.id}/conversations?per_page=100`, { headers: fdHeaders });
-        if (!res.ok) continue;
-        const convos = await res.json();
-        if (!Array.isArray(convos) || !convos.length) continue;
+        const convos: any[] = [];
+        let cPage = 1;
+        while (cPage <= 30) {
+          const res = await fetch(`${baseUrl}/tickets/${t.id}/conversations?per_page=100&page=${cPage}`, { headers: fdHeaders });
+          if (!res.ok) break;
+          const batch = await res.json();
+          if (!Array.isArray(batch) || batch.length === 0) break;
+          convos.push(...batch);
+          if (batch.length < 100) break; // last page
+          cPage++;
+        }
+        if (!convos.length) continue;
         const rows = convos.map((c: any) => ({
           id: c.id,
           ticket_id: t.id,
