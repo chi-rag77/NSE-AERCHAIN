@@ -31,11 +31,13 @@ interface Props {
   companies?: string[];
   selectedCompany?: string;
   onSelectCompany?: (v: string) => void;
+  /** Hide the manual re-sync button for anonymous visitors in public mode. */
+  canRefresh?: boolean;
 }
 
 export const Header = ({
   onRefresh, isRefreshing, lastUpdated,
-  companies = [], selectedCompany = ALL_CUSTOMERS, onSelectCompany,
+  companies = [], selectedCompany = ALL_CUSTOMERS, onSelectCompany, canRefresh = true,
 }: Props) => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -127,7 +129,7 @@ export const Header = ({
             {isUsingRealAPI() ? "Live" : "Demo"}
           </span>
 
-          {onRefresh && (
+          {onRefresh && canRefresh && (
             <Button
               variant="ghost" size="icon"
               className="h-9 w-9 rounded-full text-[#6B6B8A] hover:bg-[#F0F0FA] hover:text-[#1A1A2E] dark:text-muted-foreground dark:hover:bg-secondary"

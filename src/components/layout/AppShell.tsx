@@ -6,6 +6,7 @@ import { useTickets } from "@/hooks/useTickets";
 import { Ticket, Conversation } from "@/types/freshdesk";
 import { fetchConversations } from "@/services/freshdesk";
 import { ALL_CUSTOMERS } from "@/config";
+import { useAuth } from "@/auth/AuthProvider";
 
 interface ShellRenderProps {
   tickets: Ticket[];
@@ -21,6 +22,10 @@ interface Props {
 
 export const AppShell = ({ children }: Props) => {
   const { tickets, isLoading, isRefreshing, lastUpdated, refresh } = useTickets();
+  const { session, publicMode } = useAuth();
+  // Anonymous visitors in public mode get read-only Dashboard/Tickets — no
+  // manual re-sync trigger. A real login (any) restores it.
+  const canRefresh = !publicMode || !!session;
   const [cmdOpen, setCmdOpen] = useState(false);
   const [company, setCompany] = useState<string>(ALL_CUSTOMERS);
 
@@ -62,6 +67,7 @@ export const AppShell = ({ children }: Props) => {
         companies={companies}
         selectedCompany={company}
         onSelectCompany={setCompany}
+        canRefresh={canRefresh}
       />
 
       <main className="flex-1 overflow-y-auto app-canvas">
@@ -76,6 +82,7 @@ export const AppShell = ({ children }: Props) => {
         tickets={visibleTickets}
         onSelectTicket={openTicket}
         onRefresh={refresh}
+        canRefresh={canRefresh}
       />
 
       <TicketDrawer
