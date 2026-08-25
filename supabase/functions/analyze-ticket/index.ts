@@ -156,42 +156,46 @@ async function computeBenchmark(admin: any, ticket: any) {
   };
 }
 
-// ─── Pick a small, relevant slice of the conversation for the prompt ────────
+// ─── The full conversation, chronologically — the model reads the whole
+// thread, not a cherry-picked slice, so it can name the actual, specific
+// reason for a delay instead of falling back to generic reassurance. A cap
+// only exists as a safety valve for pathologically long threads (Gemini
+// 3.6 Flash has a 1M-token context window, so normal tickets are nowhere
+// close); when it kicks in we keep the head and tail, not a random middle.
 function pickMessages(conversations: any[]) {
-  const KEYWORD = /linear|jira|engineer|tech team|deploy|root cause|fix(ed)?|escalat/i;
+  const MAX_MESSAGES = 250;
   const sorted = [...conversations].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
-  const picked: any[] = [];
-  const seen = new Set<number>();
-  const add = (c: any) => { if (c && !seen.has(c.id)) { seen.add(c.id); picked.push(c); } };
-
-  add(sorted.find((c) => !c.incoming && !c.private)); // first agent reply
-  sorted.filter((c) => KEYWORD.test(c.body_text ?? "")).slice(0, 3).forEach(add);
-  sorted.slice(-4).forEach(add);
-
-  return picked.slice(0, 8).sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+  if (sorted.length <= MAX_MESSAGES) return sorted;
+  const headCount = Math.round(MAX_MESSAGES * 0.6);
+  return [...sorted.slice(0, headCount), ...sorted.slice(headCount - MAX_MESSAGES)];
 }
-const snippet = (text: string) => (text ?? "").replace(/\s+/g, " ").trim().slice(0, 280);
+const snippet = (text: string) => (text ?? "").replace(/\s+/g, " ").trim().slice(0, 600);
 
 // Bump this whenever buildPrompt's instructions change meaningfully (tone,
 // fields, etc.) — it's folded into input_hash so every previously cached
 // analysis is treated as stale and regenerates fresh on the next click,
 // instead of silently serving text written under the old instructions.
-const PROMPT_VERSION = "2-client-facing-diplomatic";
+const PROMPT_VERSION = "3-concrete-full-thread";
 
-// ─── Gemini call — structured JSON output, small prompt, facts pre-computed ──
+// ─── Gemini call — structured JSON output, facts pre-computed ──────────────
 const RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
+    primary_cause: { type: "STRING" },
     narrative: { type: "STRING" },
     formal_narrative: { type: "STRING" },
     prevention_tip: { type: "STRING" },
   },
-  required: ["narrative", "formal_narrative", "prevention_tip"],
+  required: ["primary_cause", "narrative", "formal_narrative", "prevention_tip"],
 };
 
 function buildPrompt(ticket: any, segments: Segment[], attribution: any, benchmark: any, slaHours: number | null, messages: any[]) {
   const lines: string[] = [];
-  lines.push(`You write "why did this take as long as it did" explanations for support tickets. IMPORTANT: this is shown directly to the client (NSE, a stock exchange) — Aerchain is the vendor being read about. Write diplomatically: Aerchain must never come across as slow, idle, neglectful, or at fault. Frame Aerchain's own time as active effort — careful investigation, coordination with engineering, thorough validation before closing — and convey that the team worked hard to bring this to resolution. Time spent waiting on the customer should be stated gently and factually, never as a complaint. Stay completely accurate to the numbers given below — reframe the STORY and tone, never the FACTS.`);
+  lines.push(`You write "why did this take as long as it did" explanations for support tickets. IMPORTANT: this is shown directly to the client (NSE, a stock exchange) — Aerchain is the vendor being read about.`);
+  lines.push(`Two rules, both mandatory and NOT in tension with each other:`);
+  lines.push(`  (a) DIPLOMATIC — Aerchain must never come across as slow, idle, neglectful, or at fault. Frame Aerchain's own time as active effort. Time spent waiting on the customer is stated gently and factually, never as a complaint.`);
+  lines.push(`  (b) CONCRETE — every field must state the actual, specific reason for the duration, drawn from the ticket subject and the messages below (what was being reviewed, how many parts/teams/approvals were involved, what needed clarifying, what changed hands). A reader must finish knowing what genuinely happened. Generic filler with no specific content ("thorough review," "careful assessment," "we appreciate your patience," "utmost priority") is a FAILURE even if it sounds polished — only use such phrases attached to a concrete detail, never on their own.`);
+  lines.push(`Stay completely accurate to the numbers given below — reframe the STORY and tone, never the FACTS.`);
   lines.push(`Ticket #${ticket.id} — "${ticket.subject}". Type: ${ticket.ticket_type ?? "Unclassified"}. Priority code: ${ticket.priority}. Company: ${ticket.company_name ?? "Unknown"}.`);
   lines.push(`Current status: ${statusLabel(ticket.status)}. SLA target: ${slaHours ? slaHours + " calendar hours" : "unknown"}.`);
   lines.push(`Status timeline (already computed — do not invent or alter these numbers):`);
@@ -201,14 +205,16 @@ function buildPrompt(ticket: any, segments: Segment[], attribution: any, benchma
     lines.push(`Benchmark (already computed): similar tickets (same type + priority) resolved in a median of ${benchmark.medianHours}h across ${benchmark.sampleSize} tickets. This ticket: ${benchmark.ticketHours}h (${benchmark.multiple}x the median).`);
   }
   if (messages.length) {
-    lines.push(`Relevant messages:`);
+    lines.push(`Full conversation thread (${messages.length} messages, chronological — this is the source of the concrete "what actually happened" detail rule (b) requires):`);
     messages.forEach((m, i) => lines.push(`  M${i + 1}. [${m.private ? "private note" : m.incoming ? "customer" : "agent"}, ${m.created_at}]: "${snippet(m.body_text)}"`));
   }
-  lines.push(`Write three fields, all in the diplomatic, client-facing tone described above:`);
-  lines.push(`1. narrative — 2-4 sentences with the evidence trail visible, for an agent presenting this to the client. Cite the timeline using the exact tokens S1, S2, ... and messages using M1, M2, ... where relevant. Never state a duration, percentage, or benchmark that isn't given above.`);
-  lines.push(`2. formal_narrative — the same facts as a warm, professional 2-3 sentence paragraph for a customer-facing SLA report, emphasizing the effort the team put in to close this out. No internal jargon, no S#/M# tokens, no words like "breach," "failed," or "overdue" — describe it as extra time invested to get it right.`);
-  lines.push(`3. prevention_tip — one concrete, forward-looking sentence grounded only in this ticket's own pattern, phrased as a commitment to doing even better next time — not a criticism of what happened here.`);
+  lines.push(`Write four fields, all following BOTH rules above:`);
+  lines.push(`1. primary_cause — a short 3-7 word label naming the SPECIFIC, concrete main reason for the duration (e.g. "Multi-team documentation verification", "Awaiting NSE confirmation on scope", "Engineering fix required re-testing"). Must be specific to this ticket's actual content, never a generic label like "Delay" or "Extended review."`);
+  lines.push(`2. narrative — 2-4 sentences with the evidence trail visible, for an agent presenting this to the client. Cite the timeline using the exact tokens S1, S2, ... and messages using M1, M2, ... where relevant. Never state a duration, percentage, or benchmark that isn't given above.`);
+  lines.push(`3. formal_narrative — the same facts as a warm, professional 2-3 sentence paragraph for a customer-facing SLA report, emphasizing the effort the team put in to close this out. No internal jargon, no S#/M# tokens, no words like "breach," "failed," or "overdue" — describe it as extra time invested to get it right. It must still pass rule (b): a client reading only this paragraph should understand the actual, specific reason for the timeline, not just that "the team worked hard."`);
+  lines.push(`4. prevention_tip — one concrete, forward-looking sentence grounded only in this ticket's own pattern, phrased as a commitment to doing even better next time — not a criticism of what happened here.`);
   if (segments.length <= 1) lines.push(`The timeline has only one entry — say plainly that detailed history isn't available yet rather than guessing at a cause.`);
+  if (!messages.length) lines.push(`No conversation messages are available — say plainly that a specific cause can't be pinpointed from the record, rather than inventing one.`);
   return lines.join("\n");
 }
 
@@ -287,13 +293,15 @@ Deno.serve(async (req) => {
 
     const { data: cached } = await admin.from("ticket_ai_analysis").select("*").eq("ticket_id", ticketId).maybeSingle();
 
-    let narrative: string, formalNarrative: string, preventionTip: string, citations: any[], model: string, generatedAt: string, generatedBy: string | null, generated = false;
+    let primaryCause: string, narrative: string, formalNarrative: string, preventionTip: string, citations: any[], model: string, generatedAt: string, generatedBy: string | null, generated = false;
 
     if (cached && cached.input_hash === inputHash && !force) {
-      narrative = cached.narrative; formalNarrative = cached.formal_narrative; preventionTip = cached.prevention_tip;
+      primaryCause = cached.primary_cause; narrative = cached.narrative; formalNarrative = cached.formal_narrative; preventionTip = cached.prevention_tip;
       citations = cached.citations ?? []; model = cached.model; generatedAt = cached.generated_at; generatedBy = cached.generated_by;
     } else {
       generated = true;
+      // Full thread, every page — see sync-freshdesk's pagination fix. This is
+      // what makes primary_cause/narrative specific instead of generic filler.
       const { data: conversations } = await admin.from("conversations").select("*").eq("ticket_id", ticketId).order("created_at", { ascending: true });
       const messages = pickMessages(conversations ?? []);
       const prompt = buildPrompt(ticket, segments, attribution, benchmark, slaHours, messages);
@@ -309,19 +317,19 @@ Deno.serve(async (req) => {
             data: {
               ticket_id: ticketId, generated: false, stale: true,
               generated_at: cached.generated_at, model: cached.model, confidence, completeness_note: completeness,
-              segments, attribution, benchmark, narrative: cached.narrative, formal_narrative: cached.formal_narrative,
+              segments, attribution, benchmark, primary_cause: cached.primary_cause, narrative: cached.narrative, formal_narrative: cached.formal_narrative,
               prevention_tip: cached.prevention_tip, citations: cached.citations ?? [],
               warning: `Regeneration failed (${(aiErr as Error).message}); showing the last successful analysis.`,
             },
           });
         }
         return json({
-          data: { ticket_id: ticketId, generated: false, confidence, completeness_note: completeness, segments, attribution, benchmark, narrative: null },
+          data: { ticket_id: ticketId, generated: false, confidence, completeness_note: completeness, segments, attribution, benchmark, primary_cause: null, narrative: null },
           error: `AI analysis failed: ${(aiErr as Error).message}`,
         }, 502);
       }
 
-      narrative = ai.narrative; formalNarrative = ai.formal_narrative; preventionTip = ai.prevention_tip;
+      primaryCause = ai.primary_cause; narrative = ai.narrative; formalNarrative = ai.formal_narrative; preventionTip = ai.prevention_tip;
       model = GEMINI_MODEL; generatedAt = new Date().toISOString(); generatedBy = caller.user.id;
       citations = [
         ...segments.map((s, i) => ({ marker: `S${i + 1}`, type: "segment", label: `${s.label} — ${fmtDuration(s.minutes)}`, detail: `${s.startsAt} → ${s.endsAt}` })),
@@ -331,7 +339,7 @@ Deno.serve(async (req) => {
       await admin.from("ticket_ai_analysis").upsert({
         ticket_id: ticketId, generated_at: generatedAt, generated_by: generatedBy, model, input_hash: inputHash,
         confidence, completeness_note: completeness, segments, attribution, benchmark,
-        narrative, formal_narrative: formalNarrative, prevention_tip: preventionTip, citations,
+        primary_cause: primaryCause, narrative, formal_narrative: formalNarrative, prevention_tip: preventionTip, citations,
       }, { onConflict: "ticket_id" });
     }
 
@@ -339,7 +347,7 @@ Deno.serve(async (req) => {
       data: {
         ticket_id: ticketId, generated, generated_at: generatedAt, generated_by: generatedBy, model,
         confidence, completeness_note: completeness, segments, attribution, benchmark,
-        narrative, formal_narrative: formalNarrative, prevention_tip: preventionTip, citations,
+        primary_cause: primaryCause, narrative, formal_narrative: formalNarrative, prevention_tip: preventionTip, citations,
       },
     });
   } catch (err) {

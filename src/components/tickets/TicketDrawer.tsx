@@ -569,6 +569,14 @@ const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
               </div>
             </div>
 
+            {/* Primary cause — the concrete, scannable "real reason," not a vague reassurance */}
+            {data.primary_cause && (
+              <div className="flex items-center gap-2 rounded-lg bg-[#6B4EFF]/5 px-3 py-2">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-[#6B4EFF] dark:text-violet-300">Why</span>
+                <span className="text-[13px] font-semibold text-foreground">{data.primary_cause}</span>
+              </div>
+            )}
+
             {/* Narrative — client-facing summary by default */}
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
