@@ -6,7 +6,6 @@ import { useTickets } from "@/hooks/useTickets";
 import { Ticket, Conversation } from "@/types/freshdesk";
 import { fetchConversations } from "@/services/freshdesk";
 import { ALL_CUSTOMERS } from "@/config";
-import { useAuth } from "@/auth/AuthProvider";
 
 interface ShellRenderProps {
   tickets: Ticket[];
@@ -22,10 +21,10 @@ interface Props {
 
 export const AppShell = ({ children }: Props) => {
   const { tickets, isLoading, isRefreshing, lastUpdated, refresh } = useTickets();
-  const { session, publicMode } = useAuth();
-  // Anonymous visitors in public mode get read-only Dashboard/Tickets — no
-  // manual re-sync trigger. A real login (any) restores it.
-  const canRefresh = !publicMode || !!session;
+  // Manual re-sync is open to anonymous public-mode visitors too — safe
+  // because sync-freshdesk self-throttles server-side (see its own header
+  // comment), so spamming this button can't run up Freshdesk API cost or
+  // hit its rate limit regardless of who's clicking.
   const [cmdOpen, setCmdOpen] = useState(false);
   const [company, setCompany] = useState<string>(ALL_CUSTOMERS);
 
@@ -67,7 +66,6 @@ export const AppShell = ({ children }: Props) => {
         companies={companies}
         selectedCompany={company}
         onSelectCompany={setCompany}
-        canRefresh={canRefresh}
       />
 
       <main className="flex-1 overflow-y-auto app-canvas">
@@ -82,7 +80,6 @@ export const AppShell = ({ children }: Props) => {
         tickets={visibleTickets}
         onSelectTicket={openTicket}
         onRefresh={refresh}
-        canRefresh={canRefresh}
       />
 
       <TicketDrawer
