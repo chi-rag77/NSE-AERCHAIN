@@ -1,21 +1,26 @@
 // ============================================================================
 // sync-freshdesk — Supabase Edge Function (Deno)
 //
-// Pulls tickets (and their conversations) from the Freshdesk API and upserts
-// them into public.tickets / public.conversations.
+// Pulls tickets (and their conversations, ALL pages) from the Freshdesk API
+// and upserts them into public.tickets / public.conversations. Called from
+// three independent places — pg_cron every 5 min, every open browser tab's
+// 60s auto-refresh, and a manual click (open to anonymous visitors too) —
+// with no coordination between them, so it self-throttles (see MIN_INTERVAL_MS
+// below) rather than trusting callers to behave.
 //
-// Company scoping: this dashboard is multi-customer, so by default we sync
-// EVERY company. Each ticket carries its company in the custom field
+// Company scoping: this deployment is scoped to a single customer (NSE) via
+// FRESHDESK_COMPANY_NAME. Each ticket carries its company in the custom field
 // cf_company (native company_id is often null); we persist that as
-// company_name so the app can group/filter and apply per-customer SLA.
-// To restrict a deployment to a single customer, set FRESHDESK_COMPANY_NAME.
+// company_name. Leaving FRESHDESK_COMPANY_NAME unset syncs every company —
+// only do that if this deployment is genuinely meant to be multi-customer.
 //
 // Required secrets:  FRESHDESK_DOMAIN, FRESHDESK_API_KEY,
 //                    SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (auto-injected)
-// Optional secrets:  FRESHDESK_COMPANY_NAME  (cf_company to keep; default ""
-//                                             = sync ALL companies)
-//                    SYNC_CREATED_AFTER      (ISO date, default 2026-07-27T00:00:00Z)
-//                    SYNC_CONVERSATIONS      ("false" to skip conversations)
+// Optional secrets:  FRESHDESK_COMPANY_NAME     (cf_company to keep; default ""
+//                                                = sync ALL companies)
+//                    SYNC_CREATED_AFTER         (ISO date, default 2026-07-27T00:00:00Z)
+//                    SYNC_CONVERSATIONS         ("false" to skip conversations)
+//                    SYNC_MIN_INTERVAL_SECONDS  (self-throttle floor, default 90)
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -53,6 +58,37 @@ Deno.serve(async (req) => {
   const COMPANY_FILTER = (Deno.env.get("FRESHDESK_COMPANY_NAME") ?? "").trim().toUpperCase();
   const matchesCompany = (t: any) =>
     !COMPANY_FILTER || String(t.custom_fields?.cf_company ?? "").trim().toUpperCase() === COMPANY_FILTER;
+
+  // ── Cooldown — this function fetches ALL conversation pages per ticket, so
+  // one full run is now a lot of Freshdesk calls (250+ tickets × up to 30
+  // pages each). It's called from three independent, uncoordinated places —
+  // pg_cron every 5 min, the frontend's 60s auto-refresh in every open tab,
+  // and a manual click (open to anonymous visitors) — with no shared memory
+  // between them. Without a floor here, two overlapping tabs alone are
+  // enough to blow through Freshdesk's rate limit (this actually happened:
+  // sync_log was full of "Freshdesk tickets 429" errors roughly once a
+  // minute). Whoever calls first in the window does the real work; everyone
+  // else in that window gets the last known result instantly, no Freshdesk
+  // calls, no new sync_log row — so spamming this (accidentally via open
+  // tabs, or deliberately) is harmless regardless of who's calling.
+  const MIN_INTERVAL_MS = Number(Deno.env.get("SYNC_MIN_INTERVAL_SECONDS") ?? "90") * 1000;
+  const { data: lastLog } = await supabase
+    .from("sync_log")
+    .select("started_at, tickets_synced, conversations_synced")
+    .eq("status", "success")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (lastLog) {
+    const ageMs = Date.now() - Date.parse(lastLog.started_at);
+    if (ageMs < MIN_INTERVAL_MS) {
+      return json({
+        ok: true, throttled: true,
+        message: `Synced ${Math.round(ageMs / 1000)}s ago — reusing that result (min interval ${MIN_INTERVAL_MS / 1000}s).`,
+        tickets_synced: lastLog.tickets_synced, conversations_synced: lastLog.conversations_synced,
+      });
+    }
+  }
 
   // open a sync_log row
   const { data: logRow } = await supabase
