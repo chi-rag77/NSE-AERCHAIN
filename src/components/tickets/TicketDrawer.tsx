@@ -1,5 +1,7 @@
 import DOMPurify from "dompurify";
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "@/auth/AuthProvider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -471,6 +473,12 @@ const renderNarrative = (text: string, citations: AIAnalysisCitation[]) => {
 };
 
 const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
+  // analyze-ticket requires a real Supabase session (it checks server-side,
+  // same as the manual re-sync button) — an anonymous public-mode visitor or
+  // an expired session can't run this. Gate the trigger itself rather than
+  // let it fail and show a dead-end "Try again" that will just fail again.
+  const { session } = useAuth();
+  const canAnalyze = !!session;
   const [status, setStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
   const [data, setData] = useState<AIAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -516,7 +524,18 @@ const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
       </div>
 
       <div className="p-4">
-        {status === "idle" && (
+        {status === "idle" && !canAnalyze && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[12.5px] text-muted-foreground max-w-[34ch]">
+              Understand why this ticket took as long as it did — status by status, with evidence.
+            </p>
+            <Button asChild size="sm" variant="outline" className="gap-1.5 shrink-0">
+              <Link to="/login"><Lock className="h-3.5 w-3.5" /> Sign in to analyze</Link>
+            </Button>
+          </div>
+        )}
+
+        {status === "idle" && canAnalyze && (
           <div className="flex items-center justify-between gap-3">
             <p className="text-[12.5px] text-muted-foreground max-w-[34ch]">
               Understand why this ticket took as long as it did — status by status, with evidence.
@@ -535,10 +554,20 @@ const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
 
         {status === "error" && (
           <div className="space-y-2">
-            <p className="text-[12.5px] text-rose-600 dark:text-rose-400">{error}</p>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => run(false)}>
-              <RefreshCw className="h-3.5 w-3.5" /> Try again
-            </Button>
+            <p className="text-[12.5px] text-rose-600 dark:text-rose-400">
+              {/^(Invalid session|Missing authorization token)$/.test(error ?? "")
+                ? "Your session has expired — sign in again to run AI analysis."
+                : error}
+            </p>
+            {/^(Invalid session|Missing authorization token)$/.test(error ?? "") ? (
+              <Button asChild size="sm" variant="outline" className="gap-1.5">
+                <Link to="/login"><Lock className="h-3.5 w-3.5" /> Sign in</Link>
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => run(false)}>
+                <RefreshCw className="h-3.5 w-3.5" /> Try again
+              </Button>
+            )}
           </div>
         )}
 
