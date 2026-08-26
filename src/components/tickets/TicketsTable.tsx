@@ -5,17 +5,31 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import {
   ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronsRight,
-  MoreHorizontal, Inbox, AlertTriangle,
+  MoreHorizontal, Inbox, AlertTriangle, ExternalLink, Copy,
 } from "lucide-react";
 import { format, formatDistanceToNow, differenceInDays, parseISO } from "date-fns";
 import { Ticket } from "@/types/freshdesk";
 import {
   PRIORITY_META, STATUS_META, computeSLA, initials, requesterDisplayName,
-  ticketCategory, ticketDept,
+  ticketCategory, ticketDept, ticketRef,
 } from "@/lib/tickets";
+import { showSuccess } from "@/utils/toast";
+
+const copyToClipboard = async (text: string, message: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    showSuccess(message);
+  } catch {
+    // Clipboard API can be denied/unavailable — fail quietly rather than
+    // claim success on something that didn't happen.
+  }
+};
 
 type SortKey = "id" | "priority" | "status" | "sla" | "updated" | "created" | "aging";
 
@@ -378,16 +392,27 @@ export const TicketsTable = ({
                       </div>
                     </TableCell>
 
-                    {/* Actions — chevron affordance + overflow menu on hover */}
+                    {/* Actions — chevron affordance + a real overflow menu */}
                     <TableCell className="py-3.5 pr-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-0.5">
-                        <Button
-                          variant="ghost" size="icon"
-                          className="h-7 w-7 rounded-lg text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-secondary"
-                          onClick={(e) => { e.stopPropagation(); }}
-                        >
-                          <MoreHorizontal size={14} />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost" size="icon"
+                              className="h-7 w-7 rounded-lg text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100 hover:bg-secondary"
+                            >
+                              <MoreHorizontal size={14} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem onClick={() => onRowClick(t)}>
+                              <ExternalLink className="mr-2 h-3.5 w-3.5" /> Open ticket
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => copyToClipboard(ticketRef(t), `Copied ${ticketRef(t)}`)}>
+                              <Copy className="mr-2 h-3.5 w-3.5" /> Copy ticket ID
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <ChevronsRight
                           className="h-4 w-4 -translate-x-1 text-primary/70 opacity-0 transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100"
                           aria-hidden

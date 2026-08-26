@@ -7,37 +7,58 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Search, Download, X, CheckCircle2, UserPlus, Trash2,
-  SlidersHorizontal, AlertTriangle, ShieldCheck, Inbox, Hourglass,
+  Search, Download, X, Copy, Trash2,
+  SlidersHorizontal, AlertTriangle, ShieldCheck, Inbox, Hourglass, Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Ticket } from "@/types/freshdesk";
-import { computeSLA, computeMetrics } from "@/lib/tickets";
+import { computeSLA, computeMetrics, ticketRef } from "@/lib/tickets";
 import { exportTicketsCSV } from "@/utils/export";
 import { showSuccess } from "@/utils/toast";
 
 type TabKey = "all" | "open" | "attention" | "breached" | "resolved";
+const UNASSIGNED = "__unassigned__";
 
-/* ── KPI card ─────────────────────────────────────────────────────────── */
-const Kpi = ({
-  icon: Icon, label, value, accent, glow,
+/* ── Stat tile — doubles as the view switcher, so the count is never shown
+ * twice for the same thing (that duplication was the main clutter here). */
+const StatTile = ({
+  icon: Icon, label, value, active, accent, ring, onClick,
 }: {
-  icon: React.ElementType; label: string; value: number;
-  accent: string; glow: string;
+  icon: React.ElementType; label: string; value: number; active: boolean;
+  accent: string; ring: string; onClick: () => void;
 }) => (
-  <div className="group relative flex items-center gap-3 rounded-2xl border border-border/60 bg-card/80 px-4 py-3 backdrop-blur-sm transition-all hover:border-border hover:shadow-[0_8px_28px_-12px_rgba(16,24,40,0.18)]">
-    <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", accent, glow)}>
+  <button
+    onClick={onClick}
+    aria-pressed={active}
+    className={cn(
+      "group flex flex-1 items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all",
+      active
+        ? cn("border-transparent bg-card shadow-[0_8px_28px_-12px_rgba(16,24,40,0.18)] ring-2", ring)
+        : "border-border/60 bg-card/60 hover:border-border hover:bg-card"
+    )}
+  >
+    <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-opacity", accent, !active && "opacity-70 group-hover:opacity-100")}>
       <Icon className="h-[18px] w-[18px]" strokeWidth={2.2} />
     </div>
     <div className="min-w-0">
       <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70 leading-none mb-1.5">
         {label}
       </div>
-      <div className="font-display text-[22px] font-bold leading-none tabular-nums text-foreground">
+      <div className="font-display text-[20px] font-bold leading-none tabular-nums text-foreground">
         {value}
       </div>
     </div>
-  </div>
+  </button>
+);
+
+/* ── Removable filter chip ────────────────────────────────────────────── */
+const FilterChip = ({ label, onClear }: { label: string; onClear: () => void }) => (
+  <span className="inline-flex items-center gap-1 rounded-lg bg-primary/10 py-1 pl-2.5 pr-1.5 text-[12px] font-medium text-primary">
+    {label}
+    <button onClick={onClear} className="rounded-md p-0.5 hover:bg-primary/15">
+      <X className="h-3 w-3" />
+    </button>
+  </span>
 );
 
 const Body = ({ tickets, isLoading, openTicket }: {
@@ -47,10 +68,17 @@ const Body = ({ tickets, isLoading, openTicket }: {
   const [tab, setTab] = useState<TabKey>("all");
   const [priority, setPriority] = useState<string>("all");
   const [status, setStatus] = useState<string>("all");
+  const [assignee, setAssignee] = useState<string>("all");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
 
   const m = useMemo(() => computeMetrics(tickets), [tickets]);
+
+  const assignees = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of tickets) if (t.responder_name) set.add(t.responder_name);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [tickets]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -64,6 +92,8 @@ const Body = ({ tickets, isLoading, openTicket }: {
       )) return false;
       if (priority !== "all" && String(t.priority) !== priority) return false;
       if (status !== "all" && String(t.status) !== status) return false;
+      if (assignee === UNASSIGNED && t.responder_name) return false;
+      if (assignee !== "all" && assignee !== UNASSIGNED && t.responder_name !== assignee) return false;
       const sla = computeSLA(t).state;
       switch (tab) {
         case "open": return ![4, 5].includes(t.status);
@@ -73,14 +103,19 @@ const Body = ({ tickets, isLoading, openTicket }: {
         default: return true;
       }
     });
-  }, [tickets, search, tab, priority, status]);
+  }, [tickets, search, tab, priority, status, assignee]);
 
-  const tabs: { key: TabKey; label: string; count: number; dot: string }[] = [
-    { key: "all", label: "All", count: tickets.length, dot: "bg-primary" },
-    { key: "open", label: "Open", count: m.open, dot: "bg-blue-500" },
-    { key: "attention", label: "Attention", count: m.attention, dot: "bg-amber-500" },
-    { key: "breached", label: "Breached", count: m.breached, dot: "bg-rose-500" },
-    { key: "resolved", label: "Resolved", count: m.resolved, dot: "bg-emerald-500" },
+  const tiles: { key: TabKey; label: string; value: number; icon: React.ElementType; accent: string; ring: string }[] = [
+    { key: "all", label: "All", value: tickets.length, icon: Layers,
+      accent: "bg-violet-100 text-violet-600 dark:bg-violet-500/15 dark:text-violet-400", ring: "ring-violet-500/25" },
+    { key: "open", label: "Open", value: m.open, icon: Inbox,
+      accent: "bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400", ring: "ring-blue-500/25" },
+    { key: "attention", label: "Attention", value: m.attention, icon: Hourglass,
+      accent: "bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400", ring: "ring-amber-500/25" },
+    { key: "breached", label: "Breached", value: m.breached, icon: AlertTriangle,
+      accent: "bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400", ring: "ring-rose-500/25" },
+    { key: "resolved", label: "Resolved", value: m.resolved, icon: ShieldCheck,
+      accent: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400", ring: "ring-emerald-500/25" },
   ];
 
   const toggle = (id: number) =>
@@ -94,37 +129,38 @@ const Body = ({ tickets, isLoading, openTicket }: {
       return n;
     });
 
-  const activeFilterCount = (priority !== "all" ? 1 : 0) + (status !== "all" ? 1 : 0);
+  const selectedTickets = useMemo(() => tickets.filter((t) => selected.has(t.id)), [tickets, selected]);
+
+  const activeFilterCount = (priority !== "all" ? 1 : 0) + (status !== "all" ? 1 : 0) + (assignee !== "all" ? 1 : 0);
   const hasFilters = search || activeFilterCount > 0 || tab !== "all";
+
+  const priorityLabel: Record<string, string> = { "4": "Critical", "3": "High", "2": "Medium", "1": "Low" };
+  const statusLabel: Record<string, string> = { "2": "Open", "3": "Pending", "4": "Resolved", "5": "Closed", "7": "In Progress" };
 
   return (
     <div className="space-y-5">
 
-      {/* ── Header row: title + KPIs ─────────────────────────────────── */}
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-        <div>
-          <h1 className="font-display text-[26px] font-extrabold tracking-tight text-foreground">
-            Support Tickets
-          </h1>
-          <p className="mt-1 text-[13px] text-muted-foreground">
-            Live Freshdesk sync · <span className="font-semibold text-foreground/70">{tickets.length}</span> tickets tracked
-          </p>
-        </div>
+      {/* ── Header row ───────────────────────────────────────────────── */}
+      <div>
+        <h1 className="font-display text-[26px] font-extrabold tracking-tight text-foreground">
+          Support Tickets
+        </h1>
+        <p className="mt-1 text-[13px] text-muted-foreground">
+          Live Freshdesk sync · <span className="font-semibold text-foreground/70">{tickets.length}</span> tickets tracked
+        </p>
+      </div>
 
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-          <Kpi icon={AlertTriangle} label="Breached" value={m.breached}
-            accent="bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400"
-            glow="shadow-[0_4px_14px_-4px_rgba(244,63,94,0.4)]" />
-          <Kpi icon={Hourglass} label="Attention" value={m.attention}
-            accent="bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400"
-            glow="shadow-[0_4px_14px_-4px_rgba(245,158,11,0.4)]" />
-          <Kpi icon={Inbox} label="Open" value={m.open}
-            accent="bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400"
-            glow="shadow-[0_4px_14px_-4px_rgba(59,130,246,0.4)]" />
-          <Kpi icon={ShieldCheck} label="Resolved" value={m.resolved}
-            accent="bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
-            glow="shadow-[0_4px_14px_-4px_rgba(16,185,129,0.4)]" />
-        </div>
+      {/* ── Stat tiles — also the view switcher, so a count only lives in
+          one place instead of a KPI row AND a separate tab strip. ────── */}
+      <div className="flex flex-wrap gap-2.5 sm:flex-nowrap">
+        {tiles.map((t) => (
+          <StatTile
+            key={t.key}
+            icon={t.icon} label={t.label} value={t.value}
+            active={tab === t.key} accent={t.accent} ring={t.ring}
+            onClick={() => setTab(t.key)}
+          />
+        ))}
       </div>
 
       {/* ── Main surface ─────────────────────────────────────────────── */}
@@ -170,7 +206,7 @@ const Body = ({ tickets, isLoading, openTicket }: {
               <Button
                 variant="ghost" size="sm"
                 className="h-10 gap-1 rounded-xl text-[13px] text-muted-foreground hover:text-foreground"
-                onClick={() => { setSearch(""); setPriority("all"); setStatus("all"); setTab("all"); }}
+                onClick={() => { setSearch(""); setPriority("all"); setStatus("all"); setAssignee("all"); setTab("all"); }}
               >
                 <X className="h-3 w-3" /> Clear
               </Button>
@@ -217,40 +253,35 @@ const Body = ({ tickets, isLoading, openTicket }: {
                 <SelectItem value="7">In Progress</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={assignee} onValueChange={setAssignee}>
+              <SelectTrigger className="h-9 w-[170px] rounded-lg border-border/60 bg-card text-[13px]">
+                <SelectValue placeholder="Assignee" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All assignees</SelectItem>
+                <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                {assignees.map((a) => (
+                  <SelectItem key={a} value={a}>{a}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
 
-        {/* Segmented tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto border-b border-border/50 px-3 py-2.5">
-          {tabs.map((t) => {
-            const active = tab === t.key;
-            return (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  "group flex shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-[13px] font-medium transition-all duration-150",
-                  active
-                    ? "bg-foreground text-background shadow-sm"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                )}
-              >
-                <span className={cn(
-                  "h-1.5 w-1.5 rounded-full transition-transform",
-                  t.dot,
-                  active && "scale-125"
-                )} />
-                {t.label}
-                <span className={cn(
-                  "rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
-                  active ? "bg-background/20 text-background" : "bg-secondary text-muted-foreground group-hover:bg-card"
-                )}>
-                  {t.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        {/* Active filter chips — visible even when the panel above is collapsed */}
+        {activeFilterCount > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-border/50 px-4 py-2.5">
+            {priority !== "all" && (
+              <FilterChip label={`Priority: ${priorityLabel[priority] ?? priority}`} onClear={() => setPriority("all")} />
+            )}
+            {status !== "all" && (
+              <FilterChip label={`Status: ${statusLabel[status] ?? status}`} onClear={() => setStatus("all")} />
+            )}
+            {assignee !== "all" && (
+              <FilterChip label={`Assignee: ${assignee === UNASSIGNED ? "Unassigned" : assignee}`} onClear={() => setAssignee("all")} />
+            )}
+          </div>
+        )}
 
         {/* Bulk action bar */}
         {selected.size > 0 && (
@@ -263,12 +294,17 @@ const Body = ({ tickets, isLoading, openTicket }: {
             </div>
             <div className="flex items-center gap-1.5">
               <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-lg text-xs"
-                onClick={() => { showSuccess("Assigned"); setSelected(new Set()); }}>
-                <UserPlus className="h-3 w-3" /> Assign
+                onClick={() => exportTicketsCSV(selectedTickets, "selected-tickets.csv")}>
+                <Download className="h-3 w-3" /> Export selected
               </Button>
               <Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-lg text-xs"
-                onClick={() => { showSuccess("Marked resolved"); setSelected(new Set()); }}>
-                <CheckCircle2 className="h-3 w-3" /> Resolve
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(selectedTickets.map(ticketRef).join(", "));
+                    showSuccess(`Copied ${selectedTickets.length} ticket ID${selectedTickets.length === 1 ? "" : "s"}`);
+                  } catch { /* clipboard denied — fail quietly */ }
+                }}>
+                <Copy className="h-3 w-3" /> Copy IDs
               </Button>
               <Button variant="ghost" size="sm" className="h-8 gap-1.5 rounded-lg text-xs text-muted-foreground"
                 onClick={() => setSelected(new Set())}>
