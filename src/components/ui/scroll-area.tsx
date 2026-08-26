@@ -5,14 +5,22 @@ import { cn } from "@/lib/utils";
 
 const ScrollArea = React.forwardRef<
   React.ElementRef<typeof ScrollAreaPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root> & {
+    /** Extra classes for the Radix viewport. Radix renders its own wrapper
+     *  div inside the viewport as `display: table`, which sizes to content —
+     *  so unusually wide children (email layout tables, long code lines)
+     *  stretch the whole pane instead of scrolling inside their own box.
+     *  Pass `[&>div]:!block` here to constrain the content to the viewport
+     *  width. Opt-in, so existing ScrollArea call sites are untouched. */
+    viewportClassName?: string;
+  }
+>(({ className, viewportClassName, children, ...props }, ref) => (
   <ScrollAreaPrimitive.Root
     ref={ref}
     className={cn("relative overflow-hidden", className)}
     {...props}
   >
-    <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
+    <ScrollAreaPrimitive.Viewport className={cn("h-full w-full rounded-[inherit]", viewportClassName)}>
       {children}
     </ScrollAreaPrimitive.Viewport>
     <ScrollBar />

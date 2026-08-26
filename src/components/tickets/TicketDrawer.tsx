@@ -9,13 +9,15 @@ import { Ticket, Conversation, Priority } from "../../types/freshdesk";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  User, StickyNote, CheckCircle2,
+  StickyNote, CheckCircle2,
   Lock, Info, RefreshCw, Loader2, Flag, CalendarClock,
-  Lightbulb, BarChart3, Sparkles, Copy, ArrowLeft, Mail, ChevronRight,
+  Lightbulb, Sparkles, Copy, ArrowLeft, Mail, ChevronRight,
+  Paperclip, MessageSquare, History, FileText,
 } from "lucide-react";
 import { format, differenceInMinutes, parseISO, addHours, addMinutes } from "date-fns";
 import { analyzeTicket, submitDispute, fetchCachedAnalysis } from "@/services/aiAnalysis";
-import { AIAnalysis, AIAnalysisCitation } from "@/types/aiAnalysis";
+import { fetchStatusHistory, buildSegments, statusBreakdown, StatusEvent } from "@/services/statusHistory";
+import { AIAnalysis, AIAnalysisCitation, AIAnalysisSegment } from "@/types/aiAnalysis";
 import { showSuccess } from "@/utils/toast";
 import {
   requesterDisplayName, ticketDept, ticketCompany, computeSLA, SLA_NOT_APPLICABLE_MESSAGE,
@@ -208,13 +210,29 @@ const TicketHeader = ({ ticket, milestones, onClose }: { ticket: Ticket; milesto
         <span className="font-semibold text-foreground/80">{requester}</span> · {ticketDept(ticket)}
       </div>
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
         <span className={cn("inline-flex items-center gap-1.5 font-bold", SLA_TEXT[sla.state] ?? SLA_TEXT.on_track)}>
           <span className={cn("h-1.5 w-1.5 rounded-full", SLA_RAIL[sla.state] ?? SLA_RAIL.on_track)} />
-          {SLA_STATE_LABEL[sla.state] ?? "On track"}{suffix ? ` · ${suffix}` : ""}
+          {SLA_STATE_LABEL[sla.state] ?? "On track"}
         </span>
-        {sla.state !== "not_applicable" && <span className="text-muted-foreground">· {p.label}</span>}
-        <span className="text-muted-foreground">· {s.label}</span>
+        {suffix && (
+          <>
+            <span className="text-border">·</span>
+            <span className={cn("font-semibold", SLA_TEXT[sla.state] ?? SLA_TEXT.on_track)}>{suffix}</span>
+          </>
+        )}
+        {sla.state !== "not_applicable" && (
+          <>
+            <span className="text-border">·</span>
+            <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+              <span className={cn("h-1.5 w-1.5 rounded-full", p.dot)} /> {p.label}
+            </span>
+          </>
+        )}
+        <span className="text-border">·</span>
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+          <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_BAR_COLOR[ticket.status] ?? "bg-slate-400")} /> {s.label}
+        </span>
         {sla.state === "not_applicable" ? (
           <span className="text-muted-foreground">· {SLA_NOT_APPLICABLE_MESSAGE}</span>
         ) : resolution ? (
@@ -237,6 +255,32 @@ const TicketHeader = ({ ticket, milestones, onClose }: { ticket: Ticket; milesto
 const STATUS_BAR_COLOR: Record<number, string> = {
   2: "bg-blue-500", 3: "bg-indigo-500", 4: "bg-emerald-500", 5: "bg-slate-400",
   7: "bg-amber-500", 8: "bg-violet-500", 9: "bg-orange-500",
+};
+// Same palette as literal hex — SVG `stroke`/`fill` can't take a Tailwind class.
+const STATUS_HEX: Record<number, string> = {
+  2: "#3b82f6", 3: "#6366f1", 4: "#10b981", 5: "#94a3b8",
+  7: "#f59e0b", 8: "#8b5cf6", 9: "#f97316",
+};
+const OTHER_HEX = "#cbd5e1";
+
+/** Donut showing what share of the ticket's life went to its dominant status. */
+const Donut = ({ percent, color }: { percent: number; color: string }) => {
+  const r = 26;
+  const circumference = 2 * Math.PI * r;
+  return (
+    <div className="relative h-[68px] w-[68px] shrink-0">
+      <svg viewBox="0 0 64 64" className="h-full w-full -rotate-90">
+        <circle cx="32" cy="32" r={r} fill="none" strokeWidth="9" className="stroke-secondary" />
+        <circle
+          cx="32" cy="32" r={r} fill="none" strokeWidth="9" strokeLinecap="round" stroke={color}
+          strokeDasharray={`${(circumference * Math.min(100, percent)) / 100} ${circumference}`}
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center font-display text-[14px] font-extrabold text-foreground">
+        {percent}%
+      </span>
+    </div>
+  );
 };
 
 const CONFIDENCE_META: Record<AIAnalysis["confidence"], { label: string; tone: string }> = {
@@ -307,10 +351,14 @@ const renderNarrative = (
   });
 };
 
-const AIAnalysisPanel = ({ ticket, conversations, onCitationClick, onDataChange }: {
-  ticket: Ticket; conversations: Conversation[]; onCitationClick: (convId: number) => void;
-  /** Lets the sibling Timeline enrich itself with the real status segments
-   * once they exist — without duplicating the fetch/cache logic below. */
+const AIAnalysisPanel = ({ ticket, conversations, segments, onCitationClick, onDataChange }: {
+  ticket: Ticket; conversations: Conversation[];
+  /** Real status spans, read straight from ticket_status_history by the
+   * parent. The donut, the legend and the "spent Xd in Y" sentence are all
+   * computed from these — so the top of this card is true and visible even
+   * before (or without) any AI call. */
+  segments: AIAnalysisSegment[];
+  onCitationClick: (convId: number) => void;
   onDataChange?: (data: AIAnalysis | null) => void;
 }) => {
   // A first-time analysis is open to anonymous visitors (public-mode
@@ -365,6 +413,30 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick, onDataChange 
     setDisputeState(res.ok ? "sent" : "error");
   };
 
+  // ── Deterministic half of this card: which statuses the ticket's life was
+  // actually spent in. Plain arithmetic over real spans — no model involved,
+  // so it renders for every visitor whether or not AI has ever run. ────────
+  const breakdown = useMemo(() => statusBreakdown(segments), [segments]);
+  const dominant = breakdown[0];
+  const sla = computeSLA(ticket);
+  const isDone = SLA_DONE_STATUSES.includes(ticket.status);
+  const legend = useMemo(() => {
+    const withHex = breakdown.map((b) => ({ ...b, hex: STATUS_HEX[b.status] ?? OTHER_HEX }));
+    if (withHex.length <= 3) return withHex;
+    const top = withHex.slice(0, 2);
+    const rest = withHex.slice(2);
+    return [...top, {
+      status: -1, label: "Other", hex: OTHER_HEX,
+      minutes: rest.reduce((n, b) => n + b.minutes, 0),
+      percent: Math.max(0, 100 - top.reduce((n, b) => n + b.percent, 0)),
+    }];
+  }, [breakdown]);
+
+  const headline =
+    sla.state === "breached" ? "Why did this breach?" :
+    isDone ? "How did this resolve?" :
+    "Why is this taking so long?";
+
   return (
     <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
       <div className="flex items-center justify-between border-b border-border/50 bg-secondary/20 px-3.5 py-2.5">
@@ -379,15 +451,60 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick, onDataChange 
         )}
       </div>
 
-      <div className="p-3.5">
-        {status === "checking" && (
-          <div className="h-5 w-40 animate-pulse rounded bg-secondary/60" />
+      <div className="space-y-3 p-3.5">
+        {data?.warning && (
+          <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-700 dark:text-amber-300">
+            {data.warning}
+          </div>
         )}
 
+        <div>
+          <div className="text-[13px] font-bold text-foreground">{headline}</div>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+            {dominant ? (
+              <>
+                The ticket spent <b className="font-semibold text-foreground">{fmtDiff(dominant.minutes)}</b> in{" "}
+                <b className="font-semibold text-foreground">“{dominant.label}”</b>, which accounted for{" "}
+                <b className="font-semibold text-foreground">{dominant.percent}%</b> of its total{" "}
+                {isDone ? "resolution" : "elapsed"} time.
+              </>
+            ) : (
+              "No status transitions have been recorded for this ticket yet, so a status-by-status breakdown isn't available."
+            )}
+          </p>
+        </div>
+
+        {(dominant || data?.benchmark) && (
+          <div className="flex items-center gap-4 rounded-lg bg-secondary/25 px-3.5 py-3">
+            {data?.benchmark?.multiple != null && (
+              <div className="w-[92px] shrink-0">
+                <div className="font-display text-[24px] font-extrabold leading-none text-[#6B4EFF] dark:text-violet-300">
+                  {data.benchmark.multiple}×
+                </div>
+                <div className="mt-1 text-[10.5px] leading-tight text-muted-foreground">longer than similar tickets</div>
+              </div>
+            )}
+            {dominant && <Donut percent={dominant.percent} color={STATUS_HEX[dominant.status] ?? OTHER_HEX} />}
+            {legend.length > 0 && (
+              <div className="min-w-0 flex-1 space-y-1">
+                {legend.map((l) => (
+                  <div key={l.label} className="flex items-center gap-2 text-[11.5px]">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: l.hex }} />
+                    <span className="truncate text-muted-foreground">{l.label}</span>
+                    <span className="ml-auto shrink-0 font-semibold text-foreground">{l.percent}%</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {status === "checking" && <div className="h-4 w-48 animate-pulse rounded bg-secondary/60" />}
+
         {status === "idle" && (
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[12.5px] text-muted-foreground max-w-[34ch]">
-              Understand why this ticket took as long as it did — status by status, with evidence.
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border/70 px-3 py-2.5">
+            <p className="text-[12px] text-muted-foreground">
+              Add an AI explanation — the specific reason, benchmark and recommended action.
             </p>
             <Button size="sm" className="gap-1.5 shrink-0 bg-[#6B4EFF] hover:bg-[#5a3de8]" onClick={() => run(false)}>
               <Info className="h-3.5 w-3.5" /> Analyze
@@ -396,7 +513,7 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick, onDataChange 
         )}
 
         {status === "loading" && (
-          <div className="flex items-center gap-2 py-2 text-[12.5px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin text-[#6B4EFF]" /> Analyzing ticket history…
           </div>
         )}
@@ -421,65 +538,15 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick, onDataChange 
         )}
 
         {status === "loaded" && data && (
-          <div className="space-y-3">
-            {data.warning && (
-              <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-700 dark:text-amber-300">
-                {data.warning}
+          <>
+            {data.prevention_tip && (
+              <div className="rounded-lg bg-[#6B4EFF]/[0.05] px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#6B4EFF] dark:text-violet-300">
+                  <Lightbulb className="h-3 w-3" /> Recommended action
+                </div>
+                <p className="mt-1 text-[12px] leading-relaxed text-foreground">{data.prevention_tip}</p>
               </div>
             )}
-
-            {/* ── An operational briefing, not a report — sized to its
-                content, not a fixed card height. Lead with the answer. ──── */}
-            <div className="space-y-2.5">
-              {data.primary_cause && (
-                <div>
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-[#6B4EFF] dark:text-violet-300">Why is this taking so long?</div>
-                  <div className="mt-0.5 font-display text-[14.5px] font-bold leading-snug text-foreground">{data.primary_cause}</div>
-                </div>
-              )}
-
-              {(data.benchmark || data.attribution) && (
-                <div className="flex items-center gap-5 rounded-lg bg-[#6B4EFF]/[0.04] px-3 py-2.5">
-                  {data.benchmark?.multiple != null && (
-                    <div className="shrink-0">
-                      <div className="font-display text-[22px] font-extrabold leading-none text-[#6B4EFF] dark:text-violet-300">{data.benchmark.multiple}×</div>
-                      <div className="mt-0.5 text-[10px] text-muted-foreground">median resolution</div>
-                    </div>
-                  )}
-                  <div className="flex-1 space-y-1">
-                    <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                      <div className="h-full bg-[#6B4EFF]" style={{ width: `${data.attribution.aerchain}%` }} />
-                      <div className="h-full bg-sky-500" style={{ width: `${data.attribution.nse}%` }} />
-                      <div className="h-full bg-amber-500" style={{ width: `${data.attribution.engineering}%` }} />
-                    </div>
-                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10.5px] text-muted-foreground">
-                      <span><i className="inline-block h-1.5 w-1.5 rounded-sm bg-[#6B4EFF] mr-1 align-[1px]" />Aerchain {data.attribution.aerchain}%</span>
-                      <span><i className="inline-block h-1.5 w-1.5 rounded-sm bg-sky-500 mr-1 align-[1px]" />{ticketCompany(ticket)} {data.attribution.nse}%</span>
-                      <span><i className="inline-block h-1.5 w-1.5 rounded-sm bg-amber-500 mr-1 align-[1px]" />Engineering {data.attribution.engineering}%</span>
-                    </div>
-                  </div>
-                  {data.benchmark && (
-                    <div className="flex shrink-0 items-center gap-3 border-l border-[#6B4EFF]/15 pl-4 text-[11.5px]">
-                      <div>
-                        <div className="text-[10px] text-muted-foreground">Similar</div>
-                        <div className="font-semibold">{data.benchmark.medianHours}h</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-muted-foreground">This</div>
-                        <div className="font-semibold text-rose-600 dark:text-rose-400">{data.benchmark.ticketHours}h</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {data.prevention_tip && (
-                <div className="flex items-start gap-2 text-[12px] text-foreground">
-                  <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5 text-[#6B4EFF]" />
-                  <span><b className="font-semibold">Recommended next step —</b> {data.prevention_tip}</span>
-                </div>
-              )}
-            </div>
 
             {showEvidence && (
               <div className="space-y-1.5 rounded-lg bg-secondary/30 p-3">
@@ -492,8 +559,13 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick, onDataChange 
 
             {/* ── Actions as plain links, not a button row — this is metadata
                 about the briefing, not a set of primary calls to action. ── */}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/40 pt-2.5 text-[11.5px] font-semibold text-[#6B4EFF] dark:text-violet-300">
-              <button onClick={() => setShowEvidence((v) => !v)}>{showEvidence ? "Hide reasoning" : "Show reasoning"}</button>
+            <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 border-t border-border/40 pt-2.5 text-[11.5px] font-semibold text-[#6B4EFF] dark:text-violet-300">
+              {disputeState === "sent" && (
+                <span className="mr-auto font-normal text-emerald-600 dark:text-emerald-400">Filed — thanks, this will be reviewed.</span>
+              )}
+              <button className="flex items-center gap-1" onClick={() => setShowEvidence((v) => !v)}>
+                <FileText className="h-3 w-3" /> {showEvidence ? "Hide reasoning" : "Show reasoning"}
+              </button>
               <span className="text-border">·</span>
               <button
                 className="flex items-center gap-1"
@@ -504,7 +576,7 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick, onDataChange 
                   } catch { /* clipboard denied — fail quietly */ }
                 }}
               >
-                <Copy className="h-3 w-3" /> Copy for email
+                <Copy className="h-3 w-3" /> Copy summary
               </button>
               <span className="text-border">·</span>
               {canRegenerate ? (
@@ -524,12 +596,6 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick, onDataChange 
                   </button>
                 </>
               )}
-              {disputeState === "sent" && (
-                <span className="text-emerald-600 dark:text-emerald-400">Filed — thanks, this will be reviewed.</span>
-              )}
-              <span className="ml-auto font-mono text-[10px] font-normal text-muted-foreground/50">
-                {data.generated ? "Freshly generated" : "From cache · no AI credits used"}
-              </span>
             </div>
 
             {disputeOpen && disputeState !== "sent" && (
@@ -549,70 +615,202 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick, onDataChange 
                 </div>
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
     </div>
   );
 };
 
-// ─── Timeline — real ticket history, always visible. Deliberately never
-// gated behind AI Analysis: Created/Due/Resolved come straight off the
-// ticket, no AI involved. The status-by-status breakdown underneath is the
-// one piece that does need the (free-to-reuse) analysis cache — it enriches
-// this section the moment that data exists, instead of controlling whether
-// the section renders at all. ──────────────────────────────────────────────
+// ─── Timeline — the ticket's real transition track, always visible and
+// entirely AI-free: every dot below comes from ticket_status_history (or the
+// ticket's own created/resolved stamps). AI explains this timeline; it never
+// gates access to it. ──────────────────────────────────────────────────────
 
-const TicketTimeline = ({ ticket, milestones, data }: { ticket: Ticket; milestones: Milestone[]; data: AIAnalysis | null }) => {
+interface TimelineEvent { date: string; label: string; duration: string | null; hex: string }
+
+const TicketTimeline = ({ ticket, segments, onViewFullHistory }: {
+  ticket: Ticket; segments: AIAnalysisSegment[]; onViewFullHistory: () => void;
+}) => {
   const sla = computeSLA(ticket);
-  const resolution = milestones.find((m) => m.id === "resolution");
-  const endDate = data?.segments.at(-1)?.endsAt ?? (SLA_DONE_STATUSES.includes(ticket.status) ? ticket.updated_at : null);
-  const endLabel = SLA_DONE_STATUSES.includes(ticket.status) ? "Resolved" : "Now";
+  const isDone = SLA_DONE_STATUSES.includes(ticket.status);
+
+  const events: TimelineEvent[] = [
+    { date: ticket.created_at, label: "Created", duration: null, hex: "#94a3b8" },
+    ...segments.map((s) => ({
+      date: s.startsAt,
+      label: s.label,
+      duration: fmtDiff(s.minutes),
+      hex: STATUS_HEX[s.status] ?? OTHER_HEX,
+    })),
+    {
+      date: segments.at(-1)?.endsAt ?? (isDone ? ticket.updated_at : new Date().toISOString()),
+      label: isDone ? "Resolved" : "Now",
+      duration: null,
+      hex: isDone ? "#10b981" : (sla.state === "breached" ? "#f43f5e" : "#6B4EFF"),
+    },
+  ];
 
   return (
     <div>
-      <div className="mb-2.5 flex items-center gap-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground/70">Timeline</span>
-        <div className="h-px flex-1 bg-border/60" />
+        <button onClick={onViewFullHistory} className="text-[11.5px] font-semibold text-[#6B4EFF] dark:text-violet-300">
+          View full history
+        </button>
       </div>
-      <div className="relative mb-3 px-1">
-        <div className="absolute left-1 right-1 top-[5px] h-px bg-border" />
-        <div className="relative flex justify-between">
-          {[
-            { date: ticket.created_at, label: "Created", color: "bg-muted-foreground/50" },
-            { date: endDate ?? new Date().toISOString(), label: endLabel, color: SLA_RAIL[sla.state] ?? SLA_RAIL.on_track },
-          ].map((e, i, arr) => (
-            <div key={i} className={cn("flex flex-col gap-1.5", i === 0 ? "items-start" : "items-end")}>
-              <span className={cn("h-2.5 w-2.5 rounded-full ring-4 ring-card", e.color)} />
-              <div className={cn("text-[10.5px] leading-tight text-muted-foreground whitespace-nowrap", i === arr.length - 1 && "text-right")}>
-                {format(parseISO(e.date), "d MMM")}<br /><span className="font-semibold text-foreground">{e.label}</span>
+
+      {/* Horizontal track. Overflows to a scroller rather than crushing the
+          labels when a ticket has bounced through many statuses. */}
+      <div className="overflow-x-auto pb-1">
+        <div className="relative min-w-full" style={{ minWidth: `${events.length * 96}px` }}>
+          <div className="absolute left-0 right-0 top-[19px] h-px bg-border" />
+          <div className="relative flex justify-between">
+            {events.map((e, i) => (
+              <div key={i} className="flex flex-1 flex-col items-center gap-1.5 px-1 text-center">
+                <span className="text-[10.5px] leading-none text-muted-foreground whitespace-nowrap">
+                  {format(parseISO(e.date), "d MMM")}
+                </span>
+                <span className="h-2.5 w-2.5 rounded-full ring-4 ring-card" style={{ background: e.hex }} />
+                <span className="text-[11px] font-semibold leading-tight text-foreground">{e.label}</span>
+                <span className="text-[10.5px] leading-none" style={{ color: e.duration ? e.hex : undefined }}>
+                  {e.duration ?? <span className="text-muted-foreground/40">–</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Resolution summary — the AI's plain-language read of the above.
+// "Impact" from the reference design is deliberately absent: nothing in
+// Freshdesk or this database records production impact, and inventing an
+// assessment would be worse than omitting the row. ─────────────────────────
+
+const ResolutionSummary = ({ ticket, data }: { ticket: Ticket; data: AIAnalysis }) => {
+  const isDone = SLA_DONE_STATUSES.includes(ticket.status);
+  const rows = [
+    { label: "Primary delay", value: data.primary_cause },
+    { label: isDone ? "Resolution" : "Where it stands", value: data.formal_narrative },
+  ].filter((r) => !!r.value);
+  if (!rows.length) return null;
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-card p-3.5">
+      <div className="mb-2.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground/70">
+        {isDone ? "Resolution summary" : "Current summary"}
+      </div>
+      <dl className="space-y-2">
+        {rows.map((r) => (
+          <div key={r.label} className="flex gap-4 text-[12px]">
+            <dt className="w-[110px] shrink-0 text-muted-foreground">{r.label}</dt>
+            <dd className="flex-1 leading-relaxed text-foreground">{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+};
+
+// ─── Files — real attachments carried on conversation records. Freshdesk's
+// attachment URLs are signed and short-lived, so a row jumps to the message
+// that carried the file rather than offering a download link that would be
+// dead by the time anyone clicked it. ──────────────────────────────────────
+
+interface TicketFile { name: string; size: number; contentType: string; createdAt: string; convId: number }
+
+const collectFiles = (conversations: Conversation[]): TicketFile[] =>
+  conversations.flatMap((c) =>
+    (c.attachments ?? []).map((a: any) => ({
+      name: a.name ?? "Attachment",
+      size: a.size ?? 0,
+      contentType: a.content_type ?? "",
+      createdAt: a.created_at ?? c.created_at,
+      convId: c.id,
+    }))
+  );
+
+const fmtBytes = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+const FilesTab = ({ files, onOpenMessage }: { files: TicketFile[]; onOpenMessage: (convId: number) => void }) => {
+  if (!files.length) {
+    return (
+      <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/60 py-12 text-center">
+        <Paperclip className="h-5 w-5 text-muted-foreground/50" />
+        <p className="text-[12.5px] text-muted-foreground">No files attached to this ticket</p>
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-hidden rounded-xl border border-border/60">
+      {files.map((f, i) => (
+        <button
+          key={`${f.convId}-${f.name}-${i}`}
+          onClick={() => onOpenMessage(f.convId)}
+          className={cn(
+            "flex w-full items-center gap-3 px-3.5 py-2.5 text-left text-[12px] hover:bg-secondary/40",
+            i > 0 && "border-t border-border/50"
+          )}
+        >
+          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate font-medium text-foreground">{f.name}</span>
+          <span className="shrink-0 text-muted-foreground/70">{fmtBytes(f.size)}</span>
+          <span className="w-20 shrink-0 text-right text-muted-foreground/70">{format(parseISO(f.createdAt), "d MMM")}</span>
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+        </button>
+      ))}
+    </div>
+  );
+};
+
+// ─── Activity — the raw transition log, one row per recorded status change.
+// Same source as the Timeline, shown in full. ──────────────────────────────
+
+const ActivityTab = ({ ticket, history }: { ticket: Ticket; history: StatusEvent[] }) => {
+  const rows = [...history].sort((a, b) => +parseISO(b.changed_at) - +parseISO(a.changed_at));
+  if (!rows.length) {
+    return (
+      <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/60 py-12 text-center">
+        <History className="h-5 w-5 text-muted-foreground/50" />
+        <p className="text-[12.5px] text-muted-foreground">No status changes recorded yet</p>
+        <p className="text-[11px] text-muted-foreground/60">History capture began after this ticket was last synced.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="relative pl-1">
+      <span aria-hidden className="absolute left-[5px] top-2 bottom-2 w-px bg-border/60" />
+      <div className="space-y-3">
+        {rows.map((r) => (
+          <div key={r.id} className="relative flex gap-3">
+            <span
+              className="relative z-10 mt-1 h-2.5 w-2.5 shrink-0 rounded-full ring-4 ring-background"
+              style={{ background: STATUS_HEX[r.to_status] ?? OTHER_HEX }}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-2 text-[12.5px]">
+                <span className="font-semibold text-foreground">
+                  {r.from_status != null
+                    ? <>Moved to <b>{STATUS_META[r.to_status]?.label ?? r.to_status}</b> from {STATUS_META[r.from_status]?.label ?? r.from_status}</>
+                    : <>First recorded status: <b>{STATUS_META[r.to_status]?.label ?? r.to_status}</b></>}
+                </span>
+                <span className="text-[10.5px] text-muted-foreground/70">
+                  {format(parseISO(r.changed_at), "d MMM yyyy, h:mm a")}
+                </span>
+              </div>
+              <div className="text-[10.5px] text-muted-foreground/60">
+                {r.confidence === "exact" ? "Captured directly from a sync" : "Estimated from surrounding timestamps"}
               </div>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
-      {resolution && (
-        <div className="mb-3 flex items-center gap-2 text-[11.5px] text-muted-foreground">
-          <CalendarClock className="h-3 w-3" />
-          {SLA_DONE_STATUSES.includes(ticket.status) ? "Resolution target was" : "Due"} {format(resolution.deadline, "d MMM, h:mm a")}
-        </div>
-      )}
-      {data?.segments.length ? (
-        <div className="overflow-hidden rounded-lg border border-border/60">
-          {data.segments.map((s, i) => (
-            <div key={s.index} className={cn("flex items-center gap-3 px-3.5 py-2 text-[12px]", i % 2 === 1 && "bg-secondary/30")}>
-              <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_BAR_COLOR[s.status] ?? "bg-slate-400")} />
-              <span className="w-16 shrink-0 font-mono text-[10.5px] text-muted-foreground/70">{format(parseISO(s.startsAt), "d MMM")}</span>
-              <span className="font-medium">{s.label}</span>
-              <span className="ml-auto shrink-0 text-muted-foreground/70">
-                {(() => { const d = Math.floor(s.minutes / 1440), h = Math.floor((s.minutes % 1440) / 60); return d > 0 ? `${d}d ${h}h` : `${h}h ${s.minutes % 60}m`; })()}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-[11.5px] text-muted-foreground/60">Run AI analysis above for the full status-by-status breakdown.</p>
-      )}
+      <p className="mt-4 text-[11px] text-muted-foreground/60">
+        Ticket opened {format(parseISO(ticket.created_at), "d MMM yyyy, h:mm a")}.
+      </p>
     </div>
   );
 };
@@ -788,17 +986,29 @@ const DetailRows = ({ rows }: { rows: { label: string; value: ReactNode }[] }) =
   </dl>
 );
 
-const ContextPanel = ({ ticket, conversations, milestones }: { ticket: Ticket; conversations: Conversation[]; milestones: Milestone[] }) => {
+const ContextPanel = ({ ticket, conversations, milestones, fileCount, onGoTo }: {
+  ticket: Ticket; conversations: Conversation[]; milestones: Milestone[];
+  fileCount: number; onGoTo: (tab: WorkspaceTab) => void;
+}) => {
   const sla = computeSLA(ticket);
   const p = PRIORITY_META[ticket.priority] ?? { label: String(ticket.priority), tone: "", dot: "" };
   const s = STATUS_META[ticket.status] ?? { label: `Status ${ticket.status}`, tone: "" };
   const resolution = milestones.find((m) => m.id === "resolution");
-  const attachmentCount = conversations.reduce((n, c) => n + (c.attachments?.length ?? 0), 0);
+  const owner = ticket.responder_name?.trim();
+  const isDone = SLA_DONE_STATUSES.includes(ticket.status);
 
   const mainRows: { label: string; value: ReactNode }[] = [
     { label: "Status", value: s.label },
-    { label: "Severity", value: p.label },
-    { label: "Owner", value: ticket.responder_name || "Unassigned" },
+    { label: "Severity", value: <span className="inline-flex items-center gap-1.5"><span className={cn("h-1.5 w-1.5 rounded-full", p.dot)} />{p.label}</span> },
+    {
+      label: "Owner",
+      value: owner ? (
+        <span className="inline-flex items-center gap-1.5">
+          <Avatar className="h-4 w-4"><AvatarFallback className={cn("text-[7px] font-bold text-white", avatarColor(owner))}>{initials(owner)}</AvatarFallback></Avatar>
+          {owner}
+        </span>
+      ) : "Unassigned",
+    },
     { label: "Requester", value: requesterDisplayName(ticket) },
     { label: "Organization", value: ticketCompany(ticket) },
     ...(resolution && sla.state !== "not_applicable"
@@ -821,6 +1031,25 @@ const ContextPanel = ({ ticket, conversations, milestones }: { ticket: Ticket; c
     ...(ticket.sub_type ? [{ label: "Issue type", value: ticket.sub_type }] : []),
   ];
 
+  // Only real SLA facts: the target we computed, the actual stop time on a
+  // done ticket, and how far past target it ran.
+  const slaRows: { label: string; value: ReactNode }[] =
+    sla.state === "not_applicable" || !resolution ? [] : [
+      { label: "Target", value: format(resolution.deadline, "d MMM, h:mm a") },
+      {
+        label: isDone ? "Actual resolution" : "Elapsed",
+        value: isDone ? format(parseISO(ticket.updated_at), "d MMM, h:mm a") : fmtDiff(differenceInMinutes(new Date(), parseISO(ticket.created_at))),
+      },
+      ...(sla.state === "breached"
+        ? [{ label: "Overdue", value: <span className="font-semibold text-rose-600 dark:text-rose-400">{sla.remaining.replace(/^-/, "")}</span> }]
+        : []),
+    ];
+
+  const related: { icon: typeof Paperclip; label: string; count: number; tab: WorkspaceTab }[] = [
+    { icon: Paperclip, label: "Attachments", count: fileCount, tab: "files" },
+    { icon: MessageSquare, label: "Conversations", count: conversations.length, tab: "conversation" },
+  ];
+
   return (
     <div className="rounded-xl border border-border/60 bg-card p-3.5 space-y-3.5">
       <div>
@@ -833,12 +1062,28 @@ const ContextPanel = ({ ticket, conversations, milestones }: { ticket: Ticket; c
           <DetailRows rows={classificationRows} />
         </div>
       )}
-      {attachmentCount > 0 && (
+      {slaRows.length > 0 && (
         <div className="border-t border-border/50 pt-3">
-          <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">Attachments</div>
-          <p className="text-[12px] text-foreground">{attachmentCount} file{attachmentCount === 1 ? "" : "s"} across the conversation</p>
+          <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">SLA details</div>
+          <DetailRows rows={slaRows} />
         </div>
       )}
+      <div className="border-t border-border/50 pt-3">
+        <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">Related</div>
+        <div className="space-y-1">
+          {related.map((r) => (
+            <button
+              key={r.label}
+              onClick={() => onGoTo(r.tab)}
+              className="flex w-full items-center gap-2 rounded-md py-1 text-[12px] hover:text-[#6B4EFF]"
+            >
+              <r.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="text-muted-foreground">{r.label}</span>
+              <span className="ml-auto font-semibold text-foreground">{r.count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 };
@@ -847,51 +1092,99 @@ const ContextPanel = ({ ticket, conversations, milestones }: { ticket: Ticket; c
 // Activity or Files tab: neither has a real data source behind it yet, and
 // a tab that opens onto nothing is worse than not offering it. ─────────
 
+type WorkspaceTab = "overview" | "conversation" | "files" | "activity";
+
 const TicketWorkspaceBody = ({
   ticket, conversations, milestones, ackId, onCitationClick,
 }: {
   ticket: Ticket; conversations: Conversation[]; milestones: Milestone[]; ackId: number | null;
   onCitationClick: (id: number) => void;
 }) => {
-  const [tab, setTab] = useState<"overview" | "conversation">("overview");
+  const [tab, setTab] = useState<WorkspaceTab>("overview");
   const requester = requesterDisplayName(ticket);
-  // Lifted one level up so the always-visible Timeline can enrich itself
-  // with the real status segments the moment analysis data exists, without
-  // AIAnalysisPanel and Timeline duplicating the same fetch.
   const [analysis, setAnalysis] = useState<AIAnalysis | null>(null);
+
+  // Status history is read directly here — NOT via analyze-ticket — so the
+  // Timeline and Activity tab are real, free and available to every visitor
+  // regardless of whether AI has ever run on this ticket.
+  const [history, setHistory] = useState<StatusEvent[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchStatusHistory(ticket.id).then((rows) => { if (!cancelled) setHistory(rows); });
+    return () => { cancelled = true; };
+  }, [ticket.id]);
+
+  const segments = useMemo(() => buildSegments(ticket, history), [ticket, history]);
+  const files = useMemo(() => collectFiles(conversations), [conversations]);
+
+  // Jumping to a message from the Files tab means switching tabs first, then
+  // letting the thread mount before scrolling to the row.
+  const openMessage = (convId: number) => {
+    setTab("conversation");
+    requestAnimationFrame(() => requestAnimationFrame(() => onCitationClick(convId)));
+  };
+
+  const tabs: { id: WorkspaceTab; label: string; count?: number }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "conversation", label: "Conversation", count: conversations.length },
+    { id: "files", label: "Files", count: files.length },
+    { id: "activity", label: "Activity", count: history.length },
+  ];
 
   return (
     <div>
-      <div className="flex items-center gap-1 border-b border-border/60 px-5">
-        {([
-          { id: "overview" as const, label: "Overview" },
-          { id: "conversation" as const, label: `Conversation · ${conversations.length}` },
-        ]).map((t) => (
+      {/* Pinned so switching views never requires scrolling back up. */}
+      <div className="sticky top-0 z-20 flex items-center gap-1 border-b border-border/60 bg-background px-5">
+        {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              "relative px-3 py-2.5 text-[12.5px] font-semibold transition-colors",
+              "relative flex items-center gap-1.5 px-3 py-2.5 text-[12.5px] font-semibold transition-colors",
               tab === t.id ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
             {t.label}
+            {t.count != null && t.count > 0 && (
+              <span className={cn(
+                "rounded px-1.5 py-px text-[10px] font-bold",
+                tab === t.id ? "bg-[#6B4EFF]/10 text-[#6B4EFF] dark:text-violet-300" : "bg-secondary text-muted-foreground"
+              )}>
+                {t.count}
+              </span>
+            )}
             {tab === t.id && <span className="absolute inset-x-0 -bottom-px h-[2px] rounded-full bg-[#6B4EFF]" />}
           </button>
         ))}
       </div>
 
-      {tab === "overview" ? (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 p-4">
+      {tab === "overview" && (
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_252px] gap-4 p-4">
           <div className="space-y-4">
-            <AIAnalysisPanel key={ticket.id} ticket={ticket} conversations={conversations} onCitationClick={onCitationClick} onDataChange={setAnalysis} />
-            <TicketTimeline ticket={ticket} milestones={milestones} data={analysis} />
+            <AIAnalysisPanel
+              key={ticket.id}
+              ticket={ticket}
+              conversations={conversations}
+              segments={segments}
+              onCitationClick={onCitationClick}
+              onDataChange={setAnalysis}
+            />
+            <TicketTimeline ticket={ticket} segments={segments} onViewFullHistory={() => setTab("activity")} />
+            {analysis && <ResolutionSummary ticket={ticket} data={analysis} />}
           </div>
           <div className="lg:sticky lg:top-0 lg:self-start">
-            <ContextPanel ticket={ticket} conversations={conversations} milestones={milestones} />
+            <ContextPanel
+              ticket={ticket}
+              conversations={conversations}
+              milestones={milestones}
+              fileCount={files.length}
+              onGoTo={setTab}
+            />
           </div>
         </div>
-      ) : (
+      )}
+
+      {tab === "conversation" && (
         <div className="space-y-4 p-4">
           {ticket.description && (
             <div className="rounded-xl border border-border/50 bg-secondary/25 p-3.5">
@@ -912,6 +1205,9 @@ const TicketWorkspaceBody = ({
           <ConversationThread key={ticket.id} ticket={ticket} conversations={conversations} ackId={ackId} />
         </div>
       )}
+
+      {tab === "files" && <div className="p-4"><FilesTab files={files} onOpenMessage={openMessage} /></div>}
+      {tab === "activity" && <div className="p-4"><ActivityTab ticket={ticket} history={history} /></div>}
     </div>
   );
 };
@@ -947,7 +1243,7 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent side="right" floating className="gap-0 p-0 sm:max-w-[1180px]">
         <TicketHeader ticket={ticket} milestones={milestones} onClose={onClose} />
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1" viewportClassName="[&>div]:!block">
           <TicketWorkspaceBody
             ticket={ticket}
             conversations={conversations}
