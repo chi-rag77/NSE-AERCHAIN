@@ -47,6 +47,34 @@ export const fetchPrimaryCauses = async (): Promise<Record<number, string>> => {
   return map;
 };
 
+/** Direct cache read (no AI cost, no edge function round trip) — used to
+ * auto-show an already-generated analysis the instant the drawer opens,
+ * without an "Analyze" click. Returns null if this ticket has never been
+ * analyzed; a genuinely new analysis still requires the user to click
+ * Analyze (that's the one path that can spend a Gemini call). */
+export const fetchCachedAnalysis = async (ticketId: number): Promise<AIAnalysis | null> => {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("ticket_ai_analysis").select("*").eq("ticket_id", ticketId).maybeSingle();
+  if (error || !data) return null;
+  return {
+    ticket_id: data.ticket_id,
+    generated: false,
+    generated_at: data.generated_at,
+    generated_by: data.generated_by,
+    model: data.model,
+    confidence: data.confidence,
+    completeness_note: data.completeness_note,
+    segments: data.segments ?? [],
+    attribution: data.attribution ?? { aerchain: 0, nse: 0, engineering: 0 },
+    benchmark: data.benchmark ?? null,
+    primary_cause: data.primary_cause,
+    narrative: data.narrative,
+    formal_narrative: data.formal_narrative,
+    prevention_tip: data.prevention_tip,
+    citations: data.citations ?? [],
+  };
+};
+
 export const submitDispute = async (
   ticketId: number,
   reason: string,

@@ -14,7 +14,7 @@ import {
   Lightbulb, BarChart3, Sparkles, Copy, ArrowLeft, Mail, ChevronRight,
 } from "lucide-react";
 import { format, differenceInMinutes, parseISO, addHours, addMinutes } from "date-fns";
-import { analyzeTicket, submitDispute } from "@/services/aiAnalysis";
+import { analyzeTicket, submitDispute, fetchCachedAnalysis } from "@/services/aiAnalysis";
 import { AIAnalysis, AIAnalysisCitation } from "@/types/aiAnalysis";
 import { showSuccess } from "@/utils/toast";
 import {
@@ -191,43 +191,38 @@ const TicketHeader = ({ ticket, milestones, onClose }: { ticket: Ticket; milesto
     sla.state === "attention" ? `${sla.remaining} remaining` : null;
 
   return (
-    <div className="relative border-b border-border/60 bg-card">
+    <div className="relative border-b border-border/60 bg-card px-6 py-3">
       <span aria-hidden className={cn("absolute left-0 top-0 bottom-0 w-[3px]", SLA_RAIL[sla.state] ?? SLA_RAIL.on_track)} />
-      <div className="flex flex-col gap-3.5 px-6 pt-5">
-        <button onClick={onClose} className="flex w-fit items-center gap-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-3.5 w-3.5" /> Tickets
-        </button>
 
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2.5">
-              <h1 className="font-display text-[19px] font-extrabold leading-snug tracking-tight text-foreground">
-                {ticket.subject}
-              </h1>
-              <span className="shrink-0 font-mono text-[11px] text-muted-foreground/60">#{ticket.id}</span>
-            </div>
-            <div className="mt-1 text-[12.5px] text-muted-foreground">
-              <span className="font-semibold text-foreground/80">{requester}</span> · {ticketDept(ticket)}
-            </div>
-          </div>
-        </div>
+      <button onClick={onClose} className="mb-1.5 flex w-fit items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground hover:text-foreground">
+        <ArrowLeft className="h-3 w-3" /> Tickets
+      </button>
 
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pb-4 text-[12.5px]">
-          <span className={cn("inline-flex items-center gap-1.5 font-bold", SLA_TEXT[sla.state] ?? SLA_TEXT.on_track)}>
-            <span className={cn("h-1.5 w-1.5 rounded-full", SLA_RAIL[sla.state] ?? SLA_RAIL.on_track)} />
-            {SLA_STATE_LABEL[sla.state] ?? "On track"}{suffix ? ` · ${suffix}` : ""}
+      <div className="flex items-baseline gap-2.5">
+        <h1 className="truncate font-display text-[16px] font-extrabold leading-tight tracking-tight text-foreground">
+          {ticket.subject}
+        </h1>
+        <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/60">#{ticket.id}</span>
+      </div>
+      <div className="mt-0.5 text-[12px] text-muted-foreground">
+        <span className="font-semibold text-foreground/80">{requester}</span> · {ticketDept(ticket)}
+      </div>
+
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
+        <span className={cn("inline-flex items-center gap-1.5 font-bold", SLA_TEXT[sla.state] ?? SLA_TEXT.on_track)}>
+          <span className={cn("h-1.5 w-1.5 rounded-full", SLA_RAIL[sla.state] ?? SLA_RAIL.on_track)} />
+          {SLA_STATE_LABEL[sla.state] ?? "On track"}{suffix ? ` · ${suffix}` : ""}
+        </span>
+        {sla.state !== "not_applicable" && <span className="text-muted-foreground">· {p.label}</span>}
+        <span className="text-muted-foreground">· {s.label}</span>
+        {sla.state === "not_applicable" ? (
+          <span className="text-muted-foreground">· {SLA_NOT_APPLICABLE_MESSAGE}</span>
+        ) : resolution ? (
+          <span className="ml-auto flex items-center gap-1.5 text-muted-foreground">
+            <CalendarClock className="h-3 w-3" />
+            Due <b className="font-semibold text-foreground">{format(resolution.deadline, "d MMM, h:mm a")}</b>
           </span>
-          {sla.state !== "not_applicable" && <span className="text-muted-foreground">{p.label}</span>}
-          <span className="text-muted-foreground">{s.label}</span>
-          {sla.state === "not_applicable" ? (
-            <span className="text-muted-foreground">{SLA_NOT_APPLICABLE_MESSAGE}</span>
-          ) : resolution ? (
-            <span className="ml-auto flex items-center gap-1.5 text-muted-foreground">
-              <CalendarClock className="h-3.5 w-3.5" />
-              Due <b className="font-semibold text-foreground">{format(resolution.deadline, "d MMM, h:mm a")}</b>
-            </span>
-          ) : null}
-        </div>
+        ) : null}
       </div>
     </div>
   );
@@ -312,8 +307,11 @@ const renderNarrative = (
   });
 };
 
-const AIAnalysisPanel = ({ ticket, conversations, onCitationClick }: {
+const AIAnalysisPanel = ({ ticket, conversations, onCitationClick, onDataChange }: {
   ticket: Ticket; conversations: Conversation[]; onCitationClick: (convId: number) => void;
+  /** Lets the sibling Timeline enrich itself with the real status segments
+   * once they exist — without duplicating the fetch/cache logic below. */
+  onDataChange?: (data: AIAnalysis | null) => void;
 }) => {
   // A first-time analysis is open to anonymous visitors (public-mode
   // Dashboard/Tickets are read-only-open) — it costs one Gemini call, ever,
@@ -322,17 +320,29 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick }: {
   // stay gated on a real session rather than failing with a dead-end error.
   const { session } = useAuth();
   const canRegenerate = !!session;
-  const [status, setStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
+  // "checking" = the free cache read below hasn't resolved yet. Most tickets
+  // someone opens have already been analyzed by *someone*, and re-serving
+  // that costs no AI credit — so the AI card shows itself automatically
+  // instead of making every viewer re-click "Analyze" on the same ticket.
+  const [status, setStatus] = useState<"checking" | "idle" | "loading" | "loaded" | "error">("checking");
   const [data, setData] = useState<AIAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // "Lead with the answer" — evidence (timeline/attribution/benchmark/internal
-  // narrative) is collapsed by default; the hero above it already gives the
-  // verdict, so evidence is there to verify, not something everyone needs open.
   const [showEvidence, setShowEvidence] = useState(false);
   const [disputeOpen, setDisputeOpen] = useState(false);
   const [disputeReason, setDisputeReason] = useState("");
   const [disputeState, setDisputeState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const convCodes = useMemo(() => codeConversations(conversations), [conversations]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCachedAnalysis(ticket.id).then((cached) => {
+      if (cancelled) return;
+      if (cached) { setData(cached); setStatus("loaded"); onDataChange?.(cached); }
+      else setStatus("idle");
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticket.id]);
 
   const run = async (force: boolean) => {
     setStatus("loading");
@@ -341,6 +351,7 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick }: {
     if (res.ok && res.data) {
       setData(res.data);
       setStatus("loaded");
+      onDataChange?.(res.data);
     } else {
       setError(res.error ?? "AI analysis failed");
       setStatus("error");
@@ -355,8 +366,8 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick }: {
   };
 
   return (
-    <div className="rounded-2xl border border-border/60 bg-card overflow-hidden shadow-sm">
-      <div className="flex items-center justify-between border-b border-border/40 bg-secondary/20 px-4 py-3">
+    <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
+      <div className="flex items-center justify-between border-b border-border/50 bg-secondary/20 px-3.5 py-2.5">
         <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
           <Sparkles className="h-3 w-3 text-[#6B4EFF]" /> AI Analysis
         </span>
@@ -368,7 +379,11 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick }: {
         )}
       </div>
 
-      <div className="p-4">
+      <div className="p-3.5">
+        {status === "checking" && (
+          <div className="h-5 w-40 animate-pulse rounded bg-secondary/60" />
+        )}
+
         {status === "idle" && (
           <div className="flex items-center justify-between gap-3">
             <p className="text-[12.5px] text-muted-foreground max-w-[34ch]">
@@ -381,7 +396,7 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick }: {
         )}
 
         {status === "loading" && (
-          <div className="flex items-center gap-2 py-3 text-[12.5px] text-muted-foreground">
+          <div className="flex items-center gap-2 py-2 text-[12.5px] text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin text-[#6B4EFF]" /> Analyzing ticket history…
           </div>
         )}
@@ -406,33 +421,32 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick }: {
         )}
 
         {status === "loaded" && data && (
-          <div className="space-y-5">
+          <div className="space-y-3">
             {data.warning && (
               <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-700 dark:text-amber-300">
                 {data.warning}
               </div>
             )}
 
-            {/* ── AI Brief — an operational briefing, not a report. Lead with
-                the answer; everything here is what a busy reader (or NSE)
-                needs at a glance. ───────────────────────────────────────── */}
-            <div className="space-y-3.5 rounded-xl border border-[#6B4EFF]/15 bg-gradient-to-b from-[#6B4EFF]/[0.04] to-transparent p-4">
+            {/* ── An operational briefing, not a report — sized to its
+                content, not a fixed card height. Lead with the answer. ──── */}
+            <div className="space-y-2.5">
               {data.primary_cause && (
                 <div>
                   <div className="text-[10px] font-bold uppercase tracking-wide text-[#6B4EFF] dark:text-violet-300">Why is this taking so long?</div>
-                  <div className="mt-1 font-display text-[15px] font-bold leading-snug text-foreground">{data.primary_cause}</div>
+                  <div className="mt-0.5 font-display text-[14.5px] font-bold leading-snug text-foreground">{data.primary_cause}</div>
                 </div>
               )}
 
               {(data.benchmark || data.attribution) && (
-                <div className="flex items-center gap-5 border-y border-[#6B4EFF]/10 py-3">
+                <div className="flex items-center gap-5 rounded-lg bg-[#6B4EFF]/[0.04] px-3 py-2.5">
                   {data.benchmark?.multiple != null && (
                     <div className="shrink-0">
-                      <div className="font-display text-[26px] font-extrabold leading-none text-[#6B4EFF] dark:text-violet-300">{data.benchmark.multiple}×</div>
-                      <div className="mt-1 text-[10.5px] text-muted-foreground">median resolution time</div>
+                      <div className="font-display text-[22px] font-extrabold leading-none text-[#6B4EFF] dark:text-violet-300">{data.benchmark.multiple}×</div>
+                      <div className="mt-0.5 text-[10px] text-muted-foreground">median resolution</div>
                     </div>
                   )}
-                  <div className="flex-1 space-y-1.5">
+                  <div className="flex-1 space-y-1">
                     <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-secondary">
                       <div className="h-full bg-[#6B4EFF]" style={{ width: `${data.attribution.aerchain}%` }} />
                       <div className="h-full bg-sky-500" style={{ width: `${data.attribution.nse}%` }} />
@@ -444,114 +458,76 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick }: {
                       <span><i className="inline-block h-1.5 w-1.5 rounded-sm bg-amber-500 mr-1 align-[1px]" />Engineering {data.attribution.engineering}%</span>
                     </div>
                   </div>
-                </div>
-              )}
-
-              {data.benchmark && (
-                <div className="flex items-center gap-6 text-[12px]">
-                  <div>
-                    <div className="text-[10.5px] text-muted-foreground">Similar {ticket.ticket_type ?? "tickets"}</div>
-                    <div className="font-semibold">{data.benchmark.medianHours}h <span className="font-normal text-muted-foreground">median · {data.benchmark.sampleSize} tickets</span></div>
-                  </div>
-                  <div className="h-6 w-px bg-[#6B4EFF]/15" />
-                  <div>
-                    <div className="text-[10.5px] text-muted-foreground">This ticket</div>
-                    <div className="font-semibold text-rose-600 dark:text-rose-400">{data.benchmark.ticketHours}h</div>
-                  </div>
+                  {data.benchmark && (
+                    <div className="flex shrink-0 items-center gap-3 border-l border-[#6B4EFF]/15 pl-4 text-[11.5px]">
+                      <div>
+                        <div className="text-[10px] text-muted-foreground">Similar</div>
+                        <div className="font-semibold">{data.benchmark.medianHours}h</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-muted-foreground">This</div>
+                        <div className="font-semibold text-rose-600 dark:text-rose-400">{data.benchmark.ticketHours}h</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {data.prevention_tip && (
-                <div className="flex items-start gap-2 rounded-lg bg-card border border-[#6B4EFF]/10 px-3 py-2.5 text-[12.5px] text-foreground">
+                <div className="flex items-start gap-2 text-[12px] text-foreground">
                   <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5 text-[#6B4EFF]" />
                   <span><b className="font-semibold">Recommended next step —</b> {data.prevention_tip}</span>
                 </div>
               )}
-
-              <div className="flex items-center gap-4 text-[12px] font-semibold text-[#6B4EFF] dark:text-violet-300">
-                <button onClick={() => setShowEvidence((v) => !v)}>{showEvidence ? "Hide reasoning" : "Show reasoning"}</button>
-                <button
-                  className="flex items-center gap-1"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(data.formal_narrative ?? "");
-                      showSuccess("Copied — ready to paste into a customer email");
-                    } catch { /* clipboard denied — fail quietly */ }
-                  }}
-                >
-                  <Copy className="h-3 w-3" /> Copy for email
-                </button>
-              </div>
-
-              {showEvidence && (
-                <div className="space-y-2 border-t border-[#6B4EFF]/10 pt-3">
-                  <p className="text-[13px] leading-relaxed text-foreground">
-                    {data.narrative ? renderNarrative(data.narrative, data.citations, convCodes, onCitationClick) : "No narrative available."}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground/70">{data.completeness_note}</p>
-                </div>
-              )}
             </div>
 
-            {/* ── Timeline — real status transitions, not a solid bar. ──── */}
-            <div>
-              <div className="mb-3 text-[11px] font-bold uppercase tracking-wide text-muted-foreground/70">Timeline</div>
-              <div className="relative mb-4 px-1">
-                <div className="absolute left-1 right-1 top-[5px] h-px bg-border" />
-                <div className="relative flex justify-between">
-                  {[
-                    { date: ticket.created_at, label: "Created", color: "bg-muted-foreground/50" },
-                    ...(data.segments.at(-1) ? [{
-                      date: data.segments.at(-1)!.endsAt,
-                      label: SLA_DONE_STATUSES.includes(ticket.status) ? "Resolved" : "Now",
-                      color: SLA_RAIL[computeSLA(ticket).state] ?? SLA_RAIL.on_track,
-                    }] : []),
-                  ].map((e, i, arr) => (
-                    <div key={i} className={cn("flex flex-col gap-2", i === 0 ? "items-start" : i === arr.length - 1 ? "items-end" : "items-center")}>
-                      <span className={cn("h-2.5 w-2.5 rounded-full ring-4 ring-card", e.color)} />
-                      <div className={cn("text-[10.5px] leading-tight text-muted-foreground whitespace-nowrap", i === arr.length - 1 && "text-right")}>
-                        {format(parseISO(e.date), "d MMM")}<br /><span className="font-semibold text-foreground">{e.label}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+            {showEvidence && (
+              <div className="space-y-1.5 rounded-lg bg-secondary/30 p-3">
+                <p className="text-[12.5px] leading-relaxed text-foreground">
+                  {data.narrative ? renderNarrative(data.narrative, data.citations, convCodes, onCitationClick) : "No narrative available."}
+                </p>
+                <p className="text-[11px] text-muted-foreground/70">{data.completeness_note}</p>
               </div>
-              <div className="overflow-hidden rounded-lg border border-border/60">
-                {data.segments.map((s, i) => (
-                  <div key={s.index} className={cn("flex items-center gap-3 px-3.5 py-2 text-[12px]", i % 2 === 1 && "bg-secondary/30")}>
-                    <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_BAR_COLOR[s.status] ?? "bg-slate-400")} />
-                    <span className="w-16 shrink-0 font-mono text-[10.5px] text-muted-foreground/70">{format(parseISO(s.startsAt), "d MMM")}</span>
-                    <span className="font-medium">{s.label}</span>
-                    <span className="ml-auto shrink-0 text-muted-foreground/70">
-                      {(() => { const d = Math.floor(s.minutes / 1440), h = Math.floor((s.minutes % 1440) / 60); return d > 0 ? `${d}d ${h}h` : `${h}h ${s.minutes % 60}m`; })()}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            )}
 
-            {/* ── Actions — Regenerate and Dispute both write with a real
-                identity server-side, so they stay behind a real session
-                (unlike the read-only first-time analysis above). ───────── */}
-            <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-4">
+            {/* ── Actions as plain links, not a button row — this is metadata
+                about the briefing, not a set of primary calls to action. ── */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/40 pt-2.5 text-[11.5px] font-semibold text-[#6B4EFF] dark:text-violet-300">
+              <button onClick={() => setShowEvidence((v) => !v)}>{showEvidence ? "Hide reasoning" : "Show reasoning"}</button>
+              <span className="text-border">·</span>
+              <button
+                className="flex items-center gap-1"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(data.formal_narrative ?? "");
+                    showSuccess("Copied — ready to paste into a customer email");
+                  } catch { /* clipboard denied — fail quietly */ }
+                }}
+              >
+                <Copy className="h-3 w-3" /> Copy for email
+              </button>
+              <span className="text-border">·</span>
               {canRegenerate ? (
-                <Button size="sm" variant="outline" className="gap-1.5 h-7 text-[11.5px]" onClick={() => run(true)}>
-                  <RefreshCw className="h-3 w-3" /> Regenerate
-                </Button>
+                <button className="flex items-center gap-1" onClick={() => run(true)}>
+                  <RefreshCw className="h-3 w-3" /> Refresh
+                </button>
               ) : (
-                <Button asChild size="sm" variant="outline" className="gap-1.5 h-7 text-[11.5px]">
-                  <Link to="/login"><Lock className="h-3 w-3" /> Sign in to regenerate</Link>
-                </Button>
+                <Link to="/login" className="flex items-center gap-1">
+                  <Lock className="h-3 w-3" /> Sign in to refresh
+                </Link>
               )}
               {canRegenerate && disputeState !== "sent" && (
-                <Button size="sm" variant="ghost" className="gap-1.5 h-7 text-[11.5px] text-muted-foreground" onClick={() => setDisputeOpen((v) => !v)}>
-                  <Flag className="h-3 w-3" /> Dispute this analysis
-                </Button>
+                <>
+                  <span className="text-border">·</span>
+                  <button className="flex items-center gap-1 text-muted-foreground" onClick={() => setDisputeOpen((v) => !v)}>
+                    <Flag className="h-3 w-3" /> Dispute
+                  </button>
+                </>
               )}
               {disputeState === "sent" && (
-                <span className="text-[11.5px] text-emerald-600 dark:text-emerald-400">Filed — thanks, this will be reviewed.</span>
+                <span className="text-emerald-600 dark:text-emerald-400">Filed — thanks, this will be reviewed.</span>
               )}
-              <span className="ml-auto text-[10px] font-mono text-muted-foreground/50">
+              <span className="ml-auto font-mono text-[10px] font-normal text-muted-foreground/50">
                 {data.generated ? "Freshly generated" : "From cache · no AI credits used"}
               </span>
             </div>
@@ -576,6 +552,67 @@ const AIAnalysisPanel = ({ ticket, conversations, onCitationClick }: {
           </div>
         )}
       </div>
+    </div>
+  );
+};
+
+// ─── Timeline — real ticket history, always visible. Deliberately never
+// gated behind AI Analysis: Created/Due/Resolved come straight off the
+// ticket, no AI involved. The status-by-status breakdown underneath is the
+// one piece that does need the (free-to-reuse) analysis cache — it enriches
+// this section the moment that data exists, instead of controlling whether
+// the section renders at all. ──────────────────────────────────────────────
+
+const TicketTimeline = ({ ticket, milestones, data }: { ticket: Ticket; milestones: Milestone[]; data: AIAnalysis | null }) => {
+  const sla = computeSLA(ticket);
+  const resolution = milestones.find((m) => m.id === "resolution");
+  const endDate = data?.segments.at(-1)?.endsAt ?? (SLA_DONE_STATUSES.includes(ticket.status) ? ticket.updated_at : null);
+  const endLabel = SLA_DONE_STATUSES.includes(ticket.status) ? "Resolved" : "Now";
+
+  return (
+    <div>
+      <div className="mb-2.5 flex items-center gap-3">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground/70">Timeline</span>
+        <div className="h-px flex-1 bg-border/60" />
+      </div>
+      <div className="relative mb-3 px-1">
+        <div className="absolute left-1 right-1 top-[5px] h-px bg-border" />
+        <div className="relative flex justify-between">
+          {[
+            { date: ticket.created_at, label: "Created", color: "bg-muted-foreground/50" },
+            { date: endDate ?? new Date().toISOString(), label: endLabel, color: SLA_RAIL[sla.state] ?? SLA_RAIL.on_track },
+          ].map((e, i, arr) => (
+            <div key={i} className={cn("flex flex-col gap-1.5", i === 0 ? "items-start" : "items-end")}>
+              <span className={cn("h-2.5 w-2.5 rounded-full ring-4 ring-card", e.color)} />
+              <div className={cn("text-[10.5px] leading-tight text-muted-foreground whitespace-nowrap", i === arr.length - 1 && "text-right")}>
+                {format(parseISO(e.date), "d MMM")}<br /><span className="font-semibold text-foreground">{e.label}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {resolution && (
+        <div className="mb-3 flex items-center gap-2 text-[11.5px] text-muted-foreground">
+          <CalendarClock className="h-3 w-3" />
+          {SLA_DONE_STATUSES.includes(ticket.status) ? "Resolution target was" : "Due"} {format(resolution.deadline, "d MMM, h:mm a")}
+        </div>
+      )}
+      {data?.segments.length ? (
+        <div className="overflow-hidden rounded-lg border border-border/60">
+          {data.segments.map((s, i) => (
+            <div key={s.index} className={cn("flex items-center gap-3 px-3.5 py-2 text-[12px]", i % 2 === 1 && "bg-secondary/30")}>
+              <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_BAR_COLOR[s.status] ?? "bg-slate-400")} />
+              <span className="w-16 shrink-0 font-mono text-[10.5px] text-muted-foreground/70">{format(parseISO(s.startsAt), "d MMM")}</span>
+              <span className="font-medium">{s.label}</span>
+              <span className="ml-auto shrink-0 text-muted-foreground/70">
+                {(() => { const d = Math.floor(s.minutes / 1440), h = Math.floor((s.minutes % 1440) / 60); return d > 0 ? `${d}d ${h}h` : `${h}h ${s.minutes % 60}m`; })()}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[11.5px] text-muted-foreground/60">Run AI analysis above for the full status-by-status breakdown.</p>
+      )}
     </div>
   );
 };
@@ -737,16 +774,33 @@ const ConversationThread = ({ ticket, conversations, ackId }: { ticket: Ticket; 
 // sticky alongside the AI brief so the reader never has to scroll back up
 // to the header to check them. ──────────────────────────────────────────
 
-const ContextPanel = ({ ticket, milestones }: { ticket: Ticket; milestones: Milestone[] }) => {
+// A row group renders only when it has at least one real value — no
+// section titled "Assignment" or "Related" with fabricated fields (a
+// ticket queue, a linked-ticket count) this app doesn't actually track.
+const DetailRows = ({ rows }: { rows: { label: string; value: ReactNode }[] }) => (
+  <dl className="space-y-2">
+    {rows.map((r) => (
+      <div key={r.label} className="flex items-center justify-between gap-3 text-[12px]">
+        <dt className="text-muted-foreground">{r.label}</dt>
+        <dd className="font-medium text-foreground text-right truncate max-w-[60%]">{r.value}</dd>
+      </div>
+    ))}
+  </dl>
+);
+
+const ContextPanel = ({ ticket, conversations, milestones }: { ticket: Ticket; conversations: Conversation[]; milestones: Milestone[] }) => {
   const sla = computeSLA(ticket);
   const p = PRIORITY_META[ticket.priority] ?? { label: String(ticket.priority), tone: "", dot: "" };
   const s = STATUS_META[ticket.status] ?? { label: `Status ${ticket.status}`, tone: "" };
   const resolution = milestones.find((m) => m.id === "resolution");
+  const attachmentCount = conversations.reduce((n, c) => n + (c.attachments?.length ?? 0), 0);
 
-  const rows: { label: string; value: ReactNode }[] = [
+  const mainRows: { label: string; value: ReactNode }[] = [
     { label: "Status", value: s.label },
     { label: "Severity", value: p.label },
     { label: "Owner", value: ticket.responder_name || "Unassigned" },
+    { label: "Requester", value: requesterDisplayName(ticket) },
+    { label: "Organization", value: ticketCompany(ticket) },
     ...(resolution && sla.state !== "not_applicable"
       ? [{ label: "Due", value: format(resolution.deadline, "d MMM, h:mm a") }]
       : []),
@@ -761,17 +815,30 @@ const ContextPanel = ({ ticket, milestones }: { ticket: Ticket; milestones: Mile
     },
   ];
 
+  const classificationRows: { label: string; value: ReactNode }[] = [
+    ...(ticket.ticket_type ? [{ label: "Type", value: ticket.ticket_type }] : []),
+    ...(ticket.module ? [{ label: "Module", value: ticket.module }] : []),
+    ...(ticket.sub_type ? [{ label: "Issue type", value: ticket.sub_type }] : []),
+  ];
+
   return (
-    <div className="rounded-xl border border-border/60 bg-card p-4">
-      <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">Details</div>
-      <dl className="space-y-2.5">
-        {rows.map((r) => (
-          <div key={r.label} className="flex items-center justify-between gap-3 text-[12.5px]">
-            <dt className="text-muted-foreground">{r.label}</dt>
-            <dd className="font-medium text-foreground text-right">{r.value}</dd>
-          </div>
-        ))}
-      </dl>
+    <div className="rounded-xl border border-border/60 bg-card p-3.5 space-y-3.5">
+      <div>
+        <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">Details</div>
+        <DetailRows rows={mainRows} />
+      </div>
+      {classificationRows.length > 0 && (
+        <div className="border-t border-border/50 pt-3">
+          <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">Classification</div>
+          <DetailRows rows={classificationRows} />
+        </div>
+      )}
+      {attachmentCount > 0 && (
+        <div className="border-t border-border/50 pt-3">
+          <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">Attachments</div>
+          <p className="text-[12px] text-foreground">{attachmentCount} file{attachmentCount === 1 ? "" : "s"} across the conversation</p>
+        </div>
+      )}
     </div>
   );
 };
@@ -788,10 +855,14 @@ const TicketWorkspaceBody = ({
 }) => {
   const [tab, setTab] = useState<"overview" | "conversation">("overview");
   const requester = requesterDisplayName(ticket);
+  // Lifted one level up so the always-visible Timeline can enrich itself
+  // with the real status segments the moment analysis data exists, without
+  // AIAnalysisPanel and Timeline duplicating the same fetch.
+  const [analysis, setAnalysis] = useState<AIAnalysis | null>(null);
 
   return (
     <div>
-      <div className="flex items-center gap-1 border-b border-border/60 px-6">
+      <div className="flex items-center gap-1 border-b border-border/60 px-5">
         {([
           { id: "overview" as const, label: "Overview" },
           { id: "conversation" as const, label: `Conversation · ${conversations.length}` },
@@ -800,7 +871,7 @@ const TicketWorkspaceBody = ({
             key={t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              "relative px-3 py-3 text-[12.5px] font-semibold transition-colors",
+              "relative px-3 py-2.5 text-[12.5px] font-semibold transition-colors",
               tab === t.id ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -811,17 +882,20 @@ const TicketWorkspaceBody = ({
       </div>
 
       {tab === "overview" ? (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5 p-6">
-          <AIAnalysisPanel key={ticket.id} ticket={ticket} conversations={conversations} onCitationClick={onCitationClick} />
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 p-4">
+          <div className="space-y-4">
+            <AIAnalysisPanel key={ticket.id} ticket={ticket} conversations={conversations} onCitationClick={onCitationClick} onDataChange={setAnalysis} />
+            <TicketTimeline ticket={ticket} milestones={milestones} data={analysis} />
+          </div>
           <div className="lg:sticky lg:top-0 lg:self-start">
-            <ContextPanel ticket={ticket} milestones={milestones} />
+            <ContextPanel ticket={ticket} conversations={conversations} milestones={milestones} />
           </div>
         </div>
       ) : (
-        <div className="space-y-5 p-6">
+        <div className="space-y-4 p-4">
           {ticket.description && (
-            <div className="rounded-2xl border border-border/50 bg-secondary/25 p-4">
-              <div className="mb-3 flex items-center gap-2">
+            <div className="rounded-xl border border-border/50 bg-secondary/25 p-3.5">
+              <div className="mb-2.5 flex items-center gap-2">
                 <Avatar className="h-7 w-7">
                   <AvatarFallback className={cn("text-[10px] font-bold text-white", avatarColor(requester))}>
                     {initials(requester)}
