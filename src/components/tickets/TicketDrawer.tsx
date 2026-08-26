@@ -473,12 +473,13 @@ const renderNarrative = (text: string, citations: AIAnalysisCitation[]) => {
 };
 
 const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
-  // analyze-ticket requires a real Supabase session (it checks server-side,
-  // same as the manual re-sync button) — an anonymous public-mode visitor or
-  // an expired session can't run this. Gate the trigger itself rather than
-  // let it fail and show a dead-end "Try again" that will just fail again.
+  // A first-time analysis is open to anonymous visitors (public-mode
+  // Dashboard/Tickets are read-only-open) — it costs one Gemini call, ever,
+  // per ticket, then serves from cache. Forcing a fresh regenerate and
+  // filing a dispute both need a real identity server-side, so those two
+  // stay gated on a real session rather than failing with a dead-end error.
   const { session } = useAuth();
-  const canAnalyze = !!session;
+  const canRegenerate = !!session;
   const [status, setStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
   const [data, setData] = useState<AIAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -524,18 +525,7 @@ const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
       </div>
 
       <div className="p-4">
-        {status === "idle" && !canAnalyze && (
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[12.5px] text-muted-foreground max-w-[34ch]">
-              Understand why this ticket took as long as it did — status by status, with evidence.
-            </p>
-            <Button asChild size="sm" variant="outline" className="gap-1.5 shrink-0">
-              <Link to="/login"><Lock className="h-3.5 w-3.5" /> Sign in to analyze</Link>
-            </Button>
-          </div>
-        )}
-
-        {status === "idle" && canAnalyze && (
+        {status === "idle" && (
           <div className="flex items-center justify-between gap-3">
             <p className="text-[12.5px] text-muted-foreground max-w-[34ch]">
               Understand why this ticket took as long as it did — status by status, with evidence.
@@ -656,12 +646,20 @@ const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
               </div>
             )}
 
-            {/* Actions */}
+            {/* Actions — Regenerate and Dispute both write with a real
+                identity server-side, so they stay behind a real session
+                (unlike the read-only first-time analysis above). */}
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Button size="sm" variant="outline" className="gap-1.5 h-7 text-[11.5px]" onClick={() => run(true)}>
-                <RefreshCw className="h-3 w-3" /> Regenerate
-              </Button>
-              {disputeState !== "sent" && (
+              {canRegenerate ? (
+                <Button size="sm" variant="outline" className="gap-1.5 h-7 text-[11.5px]" onClick={() => run(true)}>
+                  <RefreshCw className="h-3 w-3" /> Regenerate
+                </Button>
+              ) : (
+                <Button asChild size="sm" variant="outline" className="gap-1.5 h-7 text-[11.5px]">
+                  <Link to="/login"><Lock className="h-3 w-3" /> Sign in to regenerate</Link>
+                </Button>
+              )}
+              {canRegenerate && disputeState !== "sent" && (
                 <Button size="sm" variant="ghost" className="gap-1.5 h-7 text-[11.5px] text-muted-foreground" onClick={() => setDisputeOpen((v) => !v)}>
                   <Flag className="h-3 w-3" /> Dispute this analysis
                 </Button>

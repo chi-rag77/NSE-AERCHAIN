@@ -8,11 +8,15 @@
 // facts in plain language. This keeps the output trustworthy and the prompt
 // (and therefore the bill) small.
 //
-// Cost control: this only runs when a user clicks "Analyze" in the drawer
+// Cost control: this only runs when someone clicks "Analyze" in the drawer
 // (never automatically, never for a whole ticket list). Even then, the
 // Gemini call itself is skipped whenever an input_hash match shows nothing
 // relevant has changed since the last generation — a re-click just re-serves
 // the cached narrative alongside freshly recomputed (free) timeline numbers.
+// Open to anonymous callers (Dashboard/Tickets can be public — see
+// VITE_PUBLIC_MODE), but force-regenerating an already-cached ticket
+// requires a real signed-in identity — that's the one action an anonymous
+// visitor could otherwise spam for unbounded Gemini cost on one ticket.
 //
 // Required secrets: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // Optional secret:  GEMINI_MODEL (default "gemini-3.6-flash")
@@ -248,19 +252,29 @@ Deno.serve(async (req) => {
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
-  // ── Auth: any signed-in, non-disabled user may trigger an analysis ────────
+  // ── Auth: open to anonymous callers (public-mode Dashboard/Tickets are
+  // read-only-open), but a signed-in, non-disabled identity is required to
+  // FORCE a fresh Gemini call on an already-analyzed ticket — that's the one
+  // action an anonymous visitor could spam to run up real API cost on the
+  // same ticket repeatedly. A first-time (uncached) analysis is safe to open
+  // up: it costs one Gemini call per ticket, ever, then serves from cache.
   const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
-  if (!token) return json({ error: "Missing authorization token" }, 401);
-  const { data: caller, error: callerErr } = await admin.auth.getUser(token);
-  if (callerErr || !caller?.user) return json({ error: "Invalid session" }, 401);
-  const { data: callerProfile } = await admin.from("profiles").select("disabled").eq("id", caller.user.id).maybeSingle();
-  if (callerProfile?.disabled) return json({ error: "Account disabled" }, 403);
+  let callerId: string | null = null;
+  if (token) {
+    const { data: caller } = await admin.auth.getUser(token);
+    if (caller?.user) {
+      const { data: callerProfile } = await admin.from("profiles").select("disabled").eq("id", caller.user.id).maybeSingle();
+      if (callerProfile?.disabled) return json({ error: "Account disabled" }, 403);
+      callerId = caller.user.id;
+    }
+  }
 
   let body: any;
   try { body = await req.json(); } catch { return json({ error: "Invalid JSON body" }, 400); }
   const ticketId = Number(body?.ticket_id);
   const force = !!body?.force;
   if (!ticketId) return json({ error: "ticket_id is required" }, 400);
+  if (force && !callerId) return json({ error: "Sign in to regenerate — a fresh analysis on an already-analyzed ticket needs a real identity attached." }, 401);
 
   try {
     const { data: ticket, error: tErr } = await admin.from("tickets").select("*").eq("id", ticketId).maybeSingle();
@@ -325,7 +339,7 @@ Deno.serve(async (req) => {
       }
 
       primaryCause = ai.primary_cause; narrative = ai.narrative; formalNarrative = ai.formal_narrative; preventionTip = ai.prevention_tip;
-      model = GEMINI_MODEL; generatedAt = new Date().toISOString(); generatedBy = caller.user.id;
+      model = GEMINI_MODEL; generatedAt = new Date().toISOString(); generatedBy = callerId;
       citations = [
         ...segments.map((s, i) => ({ marker: `S${i + 1}`, type: "segment", label: `${s.label} — ${fmtDuration(s.minutes)}`, detail: `${s.startsAt} → ${s.endsAt}` })),
         ...messages.map((m, i) => ({ marker: `M${i + 1}`, type: m.private ? "note" : m.incoming ? "customer_message" : "agent_reply", label: m.private ? "Private note" : m.incoming ? "Customer message" : "Agent reply", detail: snippet(m.body_text), at: m.created_at })),
