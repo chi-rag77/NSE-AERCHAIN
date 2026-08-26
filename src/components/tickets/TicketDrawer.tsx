@@ -569,9 +569,10 @@ const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
               </div>
             )}
 
-            {/* Timeline */}
+            {/* ── Group 1: what happened, when ──────────────────────────── */}
             <div>
-              <div className="mb-1.5 flex h-6 w-full overflow-hidden rounded-md">
+              <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">Status timeline</span>
+              <div className="flex h-6 w-full overflow-hidden rounded-md">
                 {data.segments.map((s) => (
                   <div
                     key={s.index}
@@ -581,75 +582,77 @@ const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
                   />
                 ))}
               </div>
-              <div className="flex justify-between text-[10px] font-mono text-muted-foreground/60">
+              <div className="mt-1.5 flex justify-between text-[10px] font-mono text-muted-foreground/60">
                 <span>{format(parseISO(ticket.created_at), "d MMM")}, created</span>
                 <span>{data.segments.at(-1) ? format(parseISO(data.segments.at(-1)!.endsAt), "d MMM") : "now"}</span>
               </div>
             </div>
 
-            {/* Primary cause — the concrete, scannable "real reason," not a vague reassurance */}
-            {data.primary_cause && (
-              <div className="flex items-center gap-2 rounded-lg bg-[#6B4EFF]/5 px-3 py-2">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-[#6B4EFF] dark:text-violet-300">Why</span>
-                <span className="text-[13px] font-semibold text-foreground">{data.primary_cause}</span>
-              </div>
-            )}
+            {/* ── Group 2: the takeaway — why, and the summary ──────────── */}
+            <div className="space-y-2.5 border-t border-border/40 pt-4">
+              {data.primary_cause && (
+                <div className="flex items-center gap-2 rounded-lg bg-[#6B4EFF]/5 px-3 py-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[#6B4EFF] dark:text-violet-300">Why</span>
+                  <span className="text-[13px] font-semibold text-foreground">{data.primary_cause}</span>
+                </div>
+              )}
 
-            {/* Narrative — client-facing summary by default */}
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {showInternal ? "Internal detail (with evidence)" : "Client-facing summary"}
-              </span>
-              <label className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
-                Show internal detail
-                <Switch checked={showInternal} onCheckedChange={setShowInternal} className="scale-75" />
-              </label>
-            </div>
-            <p className="text-[13px] leading-relaxed text-foreground -mt-2">
-              {showInternal
-                ? (data.narrative ? renderNarrative(data.narrative, data.citations) : "No narrative available.")
-                : data.formal_narrative}
-            </p>
-            {showInternal && <p className="text-[11px] text-muted-foreground/70 -mt-2">{data.completeness_note}</p>}
-
-            {/* Attribution split */}
-            <div>
-              <div className="mb-1.5 flex h-2.5 w-full overflow-hidden rounded-full bg-secondary">
-                <div className="h-full bg-[#6B4EFF]" style={{ width: `${data.attribution.aerchain}%` }} />
-                <div className="h-full bg-sky-500" style={{ width: `${data.attribution.nse}%` }} />
-                <div className="h-full bg-amber-500" style={{ width: `${data.attribution.engineering}%` }} />
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10.5px] text-muted-foreground">
-                <span><i className="inline-block h-2 w-2 rounded-sm bg-[#6B4EFF] mr-1 align-[-1px]" />Aerchain support · {data.attribution.aerchain}%</span>
-                <span><i className="inline-block h-2 w-2 rounded-sm bg-sky-500 mr-1 align-[-1px]" />Waiting on {ticketCompany(ticket)} · {data.attribution.nse}%</span>
-                <span><i className="inline-block h-2 w-2 rounded-sm bg-amber-500 mr-1 align-[-1px]" />Engineering · {data.attribution.engineering}%</span>
-              </div>
-            </div>
-
-            {/* Benchmark */}
-            {data.benchmark && (
-              <div className="flex items-start gap-2 rounded-lg bg-secondary/40 px-3 py-2 text-[11.5px] text-foreground">
-                <BarChart3 className="h-3.5 w-3.5 shrink-0 mt-0.5 text-muted-foreground" />
-                <span>
-                  Similar <span className="font-mono">{ticket.ticket_type ?? "tickets"}</span> resolve in a median of{" "}
-                  <b>{data.benchmark.medianHours}h</b> ({data.benchmark.sampleSize} tickets). This one: <b>{data.benchmark.ticketHours}h</b>
-                  {data.benchmark.multiple != null && <> ({data.benchmark.multiple}× the median)</>}.
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {showInternal ? "Internal detail (with evidence)" : "Client-facing summary"}
                 </span>
+                <label className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+                  Show internal detail
+                  <Switch checked={showInternal} onCheckedChange={setShowInternal} className="scale-75" />
+                </label>
               </div>
-            )}
+              <p className="text-[13px] leading-relaxed text-foreground -mt-1">
+                {showInternal
+                  ? (data.narrative ? renderNarrative(data.narrative, data.citations) : "No narrative available.")
+                  : data.formal_narrative}
+              </p>
+              {showInternal && <p className="text-[11px] text-muted-foreground/70">{data.completeness_note}</p>}
+            </div>
 
-            {/* Prevention tip */}
-            {data.prevention_tip && (
-              <div className="flex items-start gap-2 rounded-lg bg-[#6B4EFF]/5 px-3 py-2 text-[11.5px] text-foreground">
-                <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5 text-[#6B4EFF]" />
-                <span>{data.prevention_tip}</span>
+            {/* ── Group 3: supporting evidence ──────────────────────────── */}
+            <div className="space-y-3 border-t border-border/40 pt-4">
+              <div>
+                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">Time attribution</span>
+                <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-secondary">
+                  <div className="h-full bg-[#6B4EFF]" style={{ width: `${data.attribution.aerchain}%` }} />
+                  <div className="h-full bg-sky-500" style={{ width: `${data.attribution.nse}%` }} />
+                  <div className="h-full bg-amber-500" style={{ width: `${data.attribution.engineering}%` }} />
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[10.5px] text-muted-foreground">
+                  <span><i className="inline-block h-2 w-2 rounded-sm bg-[#6B4EFF] mr-1 align-[-1px]" />Aerchain support · {data.attribution.aerchain}%</span>
+                  <span><i className="inline-block h-2 w-2 rounded-sm bg-sky-500 mr-1 align-[-1px]" />Waiting on {ticketCompany(ticket)} · {data.attribution.nse}%</span>
+                  <span><i className="inline-block h-2 w-2 rounded-sm bg-amber-500 mr-1 align-[-1px]" />Engineering · {data.attribution.engineering}%</span>
+                </div>
               </div>
-            )}
 
-            {/* Actions — Regenerate and Dispute both write with a real
+              {data.benchmark && (
+                <div className="flex items-start gap-2 rounded-lg bg-secondary/40 px-3 py-2 text-[11.5px] text-foreground">
+                  <BarChart3 className="h-3.5 w-3.5 shrink-0 mt-0.5 text-muted-foreground" />
+                  <span>
+                    Similar <span className="font-mono">{ticket.ticket_type ?? "tickets"}</span> resolve in a median of{" "}
+                    <b>{data.benchmark.medianHours}h</b> ({data.benchmark.sampleSize} tickets). This one: <b>{data.benchmark.ticketHours}h</b>
+                    {data.benchmark.multiple != null && <> ({data.benchmark.multiple}× the median)</>}.
+                  </span>
+                </div>
+              )}
+
+              {data.prevention_tip && (
+                <div className="flex items-start gap-2 rounded-lg bg-[#6B4EFF]/5 px-3 py-2 text-[11.5px] text-foreground">
+                  <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5 text-[#6B4EFF]" />
+                  <span>{data.prevention_tip}</span>
+                </div>
+              )}
+            </div>
+
+            {/* ── Actions — Regenerate and Dispute both write with a real
                 identity server-side, so they stay behind a real session
-                (unlike the read-only first-time analysis above). */}
-            <div className="flex flex-wrap items-center gap-2 pt-1">
+                (unlike the read-only first-time analysis above). ───────── */}
+            <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-4">
               {canRegenerate ? (
                 <Button size="sm" variant="outline" className="gap-1.5 h-7 text-[11.5px]" onClick={() => run(true)}>
                   <RefreshCw className="h-3 w-3" /> Regenerate
@@ -696,13 +699,13 @@ const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
   );
 };
 
-// ─── Conversation thread — chat-style chain ─────────────────────────────────
-// Customer on the left, agent on the right, strict chronological order (first
-// message → agent reply → next customer reply → …) so the back-and-forth is
-// readable at a glance instead of a flat stack of identical-looking cards.
-// Private notes break the chain deliberately — they're internal asides the
-// customer never saw, not part of the reply chain, so they render as their
-// own centered card rather than a chat bubble on either side.
+// ─── Conversation thread — a labeled chain ──────────────────────────────────
+// Single connected column (same visual idiom as the SLA Journey milestone
+// chain above it), strict chronological order. Every message gets a short
+// reference code so "which reply answered which message" reads at a glance
+// instead of requiring the reader to track names down a long thread:
+//   CM# = Client Mail (customer message)   SR# = Support Reply (agent reply)
+//   PN# = Private Note (internal-only, never seen by the customer)
 // Keyed by ticket.id from the parent, so switching tickets remounts this
 // (and re-runs the scroll-to-latest effect) instead of carrying over state.
 
@@ -732,66 +735,73 @@ const ConversationThread = ({ ticket, conversations, ackId }: { ticket: Ticket; 
   }
 
   const sorted = [...conversations].sort((a, b) => +parseISO(a.created_at) - +parseISO(b.created_at));
+  let clientN = 0, supportN = 0, noteN = 0;
+  const coded = sorted.map((conv) => ({
+    conv,
+    code: conv.private ? `PN${++noteN}` : !conv.incoming ? `SR${++supportN}` : `CM${++clientN}`,
+  }));
 
   return (
-    <div className="space-y-3">
-      {sorted.map((conv, i) => {
-        const isAgent = !conv.incoming;
-        const author = conv.incoming ? requester : (ticket.responder_name ?? "Aerchain Support");
-        const html = sanitize(conv.body || conv.body_text || "");
-        const isAck = conv.id === ackId;
-        const refProp = i === sorted.length - 1 ? { ref: lastRef } : {};
-        const when = format(new Date(conv.created_at), "MMM d, h:mm a");
+    <div className="relative">
+      {/* Chain rail behind the avatars */}
+      <span aria-hidden className="absolute left-[15px] top-2 bottom-2 w-px bg-border/60" />
+      <div className="space-y-3">
+        {coded.map(({ conv, code }, i) => {
+          const isAgent = !conv.incoming;
+          const author = conv.incoming ? requester : (ticket.responder_name ?? "Aerchain Support");
+          const html = sanitize(conv.body || conv.body_text || "");
+          const isAck = conv.id === ackId;
+          const refProp = i === coded.length - 1 ? { ref: lastRef } : {};
+          const when = format(new Date(conv.created_at), "MMM d, h:mm a");
+          const codeTone = conv.private
+            ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+            : isAgent
+              ? "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"
+              : "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300";
 
-        if (conv.private) {
           return (
-            <div key={conv.id} {...refProp} className="mx-auto w-[92%] rounded-xl border border-amber-200/60 bg-amber-50/50 p-3 dark:border-amber-500/20 dark:bg-amber-500/5">
-              <div className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold text-amber-700 dark:text-amber-300">
-                <Lock className="h-3 w-3" /> Private note · {author}
-                <span className="ml-auto font-normal text-amber-700/60 dark:text-amber-300/60">{when}</span>
-              </div>
-              <div className="fd-html text-[13px] text-foreground/85" dangerouslySetInnerHTML={{ __html: html }} />
-            </div>
-          );
-        }
-
-        return (
-          <div key={conv.id} {...refProp} className={cn("flex items-end gap-2", isAgent ? "justify-end" : "justify-start")}>
-            {!isAgent && (
-              <Avatar className="h-7 w-7 shrink-0 ring-2 ring-background">
-                <AvatarFallback className={cn("text-[10px] font-bold text-white", avatarColor(author))}>{initials(author)}</AvatarFallback>
-              </Avatar>
-            )}
-            <div className="min-w-0 max-w-[78%]">
-              <div className={cn("mb-1 flex items-center gap-1.5 text-[10.5px]", isAgent ? "justify-end" : "justify-start")}>
-                {!isAgent && <span className="font-semibold text-foreground">{author}</span>}
-                {isAck && (
-                  <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
-                    <CheckCircle2 className="h-2.5 w-2.5" /> Ack
-                  </span>
-                )}
-                <span className="text-muted-foreground/60">{when}</span>
-                {isAgent && <span className="font-semibold text-foreground">{author}</span>}
-              </div>
-              <div className={cn(
-                "rounded-2xl border p-3.5 shadow-sm",
-                isAgent
-                  ? "rounded-tr-sm border-violet-100 bg-violet-50/60 dark:border-violet-500/15 dark:bg-violet-500/10"
-                  : "rounded-tl-sm border-border/50 bg-card"
-              )}>
-                <div className="fd-html text-foreground/85" dangerouslySetInnerHTML={{ __html: html }} />
-              </div>
-            </div>
-            {isAgent && (
-              <Avatar className="h-7 w-7 shrink-0 ring-2 ring-background">
-                <AvatarFallback className="bg-gradient-to-br from-[#6B4EFF] to-[#8b6dff] text-[10px] font-bold text-white">
+            <div key={conv.id} {...refProp} className="relative flex gap-3">
+              <Avatar className="relative z-10 mt-0.5 h-8 w-8 shrink-0 ring-4 ring-background">
+                <AvatarFallback className={cn(
+                  "text-[10px] font-bold text-white",
+                  conv.private
+                    ? "bg-gradient-to-br from-amber-500 to-orange-500"
+                    : isAgent ? "bg-gradient-to-br from-[#6B4EFF] to-[#8b6dff]" : avatarColor(author)
+                )}>
                   {initials(author)}
                 </AvatarFallback>
               </Avatar>
-            )}
-          </div>
-        );
-      })}
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[10.5px]">
+                  <span className={cn("rounded-md px-1.5 py-0.5 font-mono font-bold tracking-wide", codeTone)}>{code}</span>
+                  <span className="font-semibold text-foreground">{author}</span>
+                  {conv.private && (
+                    <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-600 dark:bg-amber-500/10">
+                      <Lock className="h-2.5 w-2.5" /> Private
+                    </span>
+                  )}
+                  {isAck && (
+                    <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
+                      <CheckCircle2 className="h-2.5 w-2.5" /> Ack
+                    </span>
+                  )}
+                  <span className="ml-auto text-muted-foreground/60">{when}</span>
+                </div>
+                <div className={cn(
+                  "rounded-2xl rounded-tl-sm border p-3.5 shadow-sm",
+                  conv.private
+                    ? "border-amber-200/60 bg-amber-50/50 dark:border-amber-500/20 dark:bg-amber-500/5"
+                    : isAgent
+                      ? "border-violet-100 bg-violet-50/40 dark:border-violet-500/15 dark:bg-violet-500/5"
+                      : "border-border/50 bg-card"
+                )}>
+                  <div className="fd-html text-foreground/85" dangerouslySetInnerHTML={{ __html: html }} />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };
