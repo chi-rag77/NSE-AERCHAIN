@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { TicketsTable } from "@/components/tickets/TicketsTable";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import { Ticket } from "@/types/freshdesk";
 import { computeSLA, computeMetrics, ticketRef } from "@/lib/tickets";
 import { exportTicketsCSV } from "@/utils/export";
 import { showSuccess } from "@/utils/toast";
+import { fetchPrimaryCauses } from "@/services/aiAnalysis";
 
 type TabKey = "all" | "open" | "attention" | "breached" | "resolved";
 const UNASSIGNED = "__unassigned__";
@@ -71,6 +72,11 @@ const Body = ({ tickets, isLoading, openTicket }: {
   const [assignee, setAssignee] = useState<string>("all");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
+  // Preview of each ticket's AI "primary cause," if one's been generated —
+  // a cheap cache read (no AI cost), refreshed whenever the ticket set
+  // changes size (a sync landed) so newly-analyzed tickets show up here too.
+  const [primaryCauses, setPrimaryCauses] = useState<Record<number, string>>({});
+  useEffect(() => { fetchPrimaryCauses().then(setPrimaryCauses); }, [tickets.length]);
 
   const m = useMemo(() => computeMetrics(tickets), [tickets]);
 
@@ -330,6 +336,7 @@ const Body = ({ tickets, isLoading, openTicket }: {
             selected={selected}
             onToggle={toggle}
             onToggleAll={toggleAll}
+            primaryCauses={primaryCauses}
           />
         )}
       </div>
