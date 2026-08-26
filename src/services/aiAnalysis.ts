@@ -36,6 +36,17 @@ export const analyzeTicket = async (ticketId: number, opts: { force?: boolean } 
   return { ok: true, data: data.data as AIAnalysis };
 };
 
+/** Lightweight cache read (no AI cost) — used to preview a ticket's "primary
+ * cause" in the Tickets list without opening the drawer. */
+export const fetchPrimaryCauses = async (): Promise<Record<number, string>> => {
+  if (!supabase) return {};
+  const { data, error } = await supabase.from("ticket_ai_analysis").select("ticket_id, primary_cause");
+  if (error || !data) return {};
+  const map: Record<number, string> = {};
+  for (const row of data) if (row.primary_cause) map[row.ticket_id] = row.primary_cause;
+  return map;
+};
+
 export const submitDispute = async (
   ticketId: number,
   reason: string,

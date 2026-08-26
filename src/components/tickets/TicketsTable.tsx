@@ -11,7 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronsRight,
-  MoreHorizontal, Inbox, AlertTriangle, ExternalLink, Copy,
+  MoreHorizontal, Inbox, AlertTriangle, ExternalLink, Copy, Sparkles,
 } from "lucide-react";
 import { format, formatDistanceToNow, differenceInDays, parseISO } from "date-fns";
 import { Ticket } from "@/types/freshdesk";
@@ -41,6 +41,8 @@ interface Props {
   onToggle?: (id: number) => void;
   onToggleAll?: (ids: number[]) => void;
   pageSize?: number;
+  /** ticket_id → AI "primary cause," for tickets that have been analyzed. */
+  primaryCauses?: Record<number, string>;
 }
 
 const agingDays = (t: Ticket) => differenceInDays(new Date(), parseISO(t.created_at));
@@ -104,7 +106,7 @@ const Person = ({ name }: { name: string }) => (
 export const TicketsTable = ({
   tickets, onRowClick,
   selectable = false, selected = new Set(),
-  onToggle, onToggleAll, pageSize = 15,
+  onToggle, onToggleAll, pageSize = 15, primaryCauses = {},
 }: Props) => {
   const [sortKey, setSortKey] = useState<SortKey>("sla");
   const [asc, setAsc] = useState(true);
@@ -300,6 +302,12 @@ export const TicketsTable = ({
                           )}
                           <span className="truncate">{ticketDept(t)}</span>
                         </div>
+                        {primaryCauses[t.id] && (
+                          <div className="mt-1 flex items-center gap-1 text-[11px] text-[#6B4EFF] dark:text-violet-300">
+                            <Sparkles className="h-2.5 w-2.5 shrink-0" />
+                            <span className="truncate">{primaryCauses[t.id]}</span>
+                          </div>
+                        )}
                       </div>
                     </TableCell>
 

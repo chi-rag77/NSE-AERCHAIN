@@ -1,23 +1,22 @@
 import DOMPurify from "dompurify";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { Ticket, Conversation, Priority } from "../../types/freshdesk";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  Clock, User, StickyNote, CheckCircle2, XCircle,
-  Lock, AlertTriangle, Timer,
-  CircleDot, CalendarClock, Info, RefreshCw, Loader2, Flag,
-  Lightbulb, BarChart3, Sparkles,
+  User, StickyNote, CheckCircle2,
+  Lock, Info, RefreshCw, Loader2, Flag, CalendarClock,
+  Lightbulb, BarChart3, Sparkles, Copy, ArrowLeft, Mail, ChevronRight,
 } from "lucide-react";
 import { format, differenceInMinutes, parseISO, addHours, addMinutes } from "date-fns";
 import { analyzeTicket, submitDispute } from "@/services/aiAnalysis";
 import { AIAnalysis, AIAnalysisCitation } from "@/types/aiAnalysis";
+import { showSuccess } from "@/utils/toast";
 import {
   requesterDisplayName, ticketDept, ticketCompany, computeSLA, SLA_NOT_APPLICABLE_MESSAGE,
   SLA_LABELS, SLA_ACK_MINUTES,
@@ -161,277 +160,75 @@ const buildMilestones = (ticket: Ticket, conversations: Conversation[]): Milesto
   ];
 };
 
-// ─── Circular SLA gauge ───────────────────────────────────────────────────────
+// ─── Ticket header — compact command header ────────────────────────────────
+// Red is reserved for the breach signal (a thin rail + the status text), not
+// the whole surface — the old full-bleed gradient hero was doing status,
+// urgency, branding and background all at once.
 
-const CircularGauge = ({ met, total, state }: { met: number; total: number; state: string }) => {
-  const pct = total === 0 ? 0 : met / total;
-  const r = 36;
-  const circ = 2 * Math.PI * r;
-  const fill = circ * pct;
-  const color =
-    state === "breached" ? "#f43f5e" :
-    state === "met" ? "#10b981" :
-    state === "attention" ? "#f59e0b" :
-    "#6B4EFF";
-
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <svg width="96" height="96" viewBox="0 0 96 96">
-        <circle cx="48" cy="48" r={r} fill="none" stroke="currentColor" strokeWidth="8" className="text-border/40" />
-        <circle
-          cx="48" cy="48" r={r} fill="none"
-          stroke={color} strokeWidth="8"
-          strokeDasharray={`${fill} ${circ}`}
-          strokeLinecap="round"
-          transform="rotate(-90 48 48)"
-          style={{ transition: "stroke-dasharray 0.6s cubic-bezier(0.4,0,0.2,1)" }}
-        />
-        <text x="48" y="44" textAnchor="middle" className="fill-foreground" style={{ fontSize: 18, fontWeight: 800, fontFamily: "inherit" }}>
-          {met}/{total}
-        </text>
-        <text x="48" y="60" textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 9, fontWeight: 600, fontFamily: "inherit" }}>
-          MILESTONES
-        </text>
-      </svg>
-    </div>
-  );
+const SLA_RAIL: Record<string, string> = {
+  breached: "bg-rose-500", attention: "bg-amber-500", met: "bg-emerald-500",
+  on_track: "bg-[#6B4EFF]", paused: "bg-violet-500", not_applicable: "bg-slate-400",
+};
+const SLA_TEXT: Record<string, string> = {
+  breached: "text-rose-600 dark:text-rose-400", attention: "text-amber-600 dark:text-amber-400",
+  met: "text-emerald-600 dark:text-emerald-400", on_track: "text-[#6B4EFF] dark:text-violet-300",
+  paused: "text-violet-600 dark:text-violet-300", not_applicable: "text-muted-foreground",
+};
+const SLA_STATE_LABEL: Record<string, string> = {
+  breached: "Breached", attention: "At risk", met: "SLA met",
+  on_track: "On track", paused: "Paused", not_applicable: "Not tracked",
 };
 
-// ─── SLA DNA Strand ───────────────────────────────────────────────────────────
-
-const DNAStrand = ({ milestones }: { milestones: Milestone[] }) => {
-  const nodeColor = (s: MilestoneStatus) =>
-    s === "met" ? { bg: "bg-emerald-500", ring: "ring-emerald-200 dark:ring-emerald-500/30", text: "text-white" } :
-    s === "missed" ? { bg: "bg-rose-500", ring: "ring-rose-200 dark:ring-rose-500/30", text: "text-white" } :
-    s === "paused" ? { bg: "bg-violet-500", ring: "ring-violet-200 dark:ring-violet-500/30", text: "text-white" } :
-    { bg: "bg-muted", ring: "ring-border/60", text: "text-muted-foreground" };
-
-  const lineColor = (s: MilestoneStatus) =>
-    s === "met" ? "bg-emerald-400" :
-    s === "missed" ? "bg-rose-400" :
-    "bg-border/50";
-
-  const icon = (s: MilestoneStatus) =>
-    s === "met" ? <CheckCircle2 className="h-3.5 w-3.5" /> :
-    s === "missed" ? <XCircle className="h-3.5 w-3.5" /> :
-    s === "paused" ? <Timer className="h-3.5 w-3.5" /> :
-    <Clock className="h-3.5 w-3.5" />;
-
-  const pillTone = (s: MilestoneStatus) =>
-    s === "met" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" :
-    s === "missed" ? "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300" :
-    s === "paused" ? "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" :
-    "bg-secondary text-muted-foreground";
-
-  const pillText = (s: MilestoneStatus) =>
-    s === "met" ? "Completed" : s === "missed" ? "Overdue" : s === "paused" ? "Paused" : "Pending";
-
-  return (
-    <div className="relative pl-5">
-      {milestones.map((m, i) => {
-        const c = nodeColor(m.status);
-        return (
-          <div key={m.id} className="relative flex gap-4">
-            {/* Strand column */}
-            <div className="flex flex-col items-center">
-              {/* Node */}
-              <div
-                className={cn(
-                  "relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ring-4",
-                  c.bg, c.ring, c.text
-                )}
-              >
-                {icon(m.status)}
-                {/* Pulse on active/missed */}
-                {(m.status === "missed" || m.status === "pending") && m.status !== "paused" && (
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "absolute inset-0 animate-ping rounded-full opacity-40",
-                      m.status === "missed" ? "bg-rose-500" : "bg-[#6B4EFF]"
-                    )}
-                    style={{ animationDuration: "2s" }}
-                  />
-                )}
-              </div>
-              {/* Connector */}
-              {i < milestones.length - 1 && (
-                <div className={cn("mt-0.5 w-0.5 flex-1", lineColor(m.status))} style={{ minHeight: 28 }} />
-              )}
-            </div>
-
-            {/* Content */}
-            <div className={cn("flex-1 pb-5", i === milestones.length - 1 && "pb-0")}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-[13px] font-bold text-foreground leading-tight">{m.label}</div>
-                  <div className="text-[11px] text-muted-foreground">Target: {m.target}</div>
-                </div>
-                <div className="flex flex-col items-end gap-0.5 shrink-0">
-                  <span className={cn(
-                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide",
-                    pillTone(m.status)
-                  )}>
-                    {pillText(m.status)}
-                  </span>
-                  <span className="text-[10.5px] text-muted-foreground/70">{m.detail}</span>
-                </div>
-              </div>
-
-              {/* When it actually happened (or when it's due) */}
-              <div className={cn(
-                "mt-2 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px]",
-                m.actual ? "bg-secondary/50" : m.status === "paused" ? "bg-violet-50/60 dark:bg-violet-500/10" : "bg-secondary/30"
-              )}>
-                {m.actual ? (
-                  <>
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                    <span className="font-semibold text-foreground/80">{m.actualVerb}</span>
-                    <span className="text-muted-foreground">· {format(m.actual, "MMM d, h:mm a")}</span>
-                    {m.elapsedLabel && (
-                      <span className="ml-auto shrink-0 rounded-md bg-card px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                        {m.elapsedLabel}
-                      </span>
-                    )}
-                  </>
-                ) : m.status === "paused" ? (
-                  <>
-                    <Timer className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-                    <span className="text-violet-600 dark:text-violet-300">Timer paused — waiting on customer</span>
-                  </>
-                ) : (
-                  <>
-                    <CalendarClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-                    <span className="font-semibold text-foreground/70">Due by</span>
-                    <span className="text-muted-foreground">{format(m.deadline, "MMM d, h:mm a")}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-// ─── Breach Hero ──────────────────────────────────────────────────────────────
-
-const BreachHero = ({ ticket, milestones }: { ticket: Ticket; milestones: Milestone[] }) => {
+const TicketHeader = ({ ticket, milestones, onClose }: { ticket: Ticket; milestones: Milestone[]; onClose: () => void }) => {
   const sla = computeSLA(ticket);
   const p = PRIORITY_META[ticket.priority] ?? { label: String(ticket.priority), tone: "", dot: "" };
   const s = STATUS_META[ticket.status] ?? { label: `Status ${ticket.status}`, tone: "" };
   const requester = requesterDisplayName(ticket);
-  const slaLabel = SLA_LABELS[ticket.priority as Priority] ?? SLA_LABELS[1];
+  const resolution = milestones.find((m) => m.id === "resolution");
 
-  const heroStyle = {
-    breached: {
-      bg: "from-rose-600 via-rose-700 to-rose-800 dark:from-rose-900 dark:via-rose-900/80",
-      badge: "bg-white/20 text-white border-white/30",
-      label: "BREACHED",
-      icon: <AlertTriangle className="h-4 w-4" />,
-    },
-    attention: {
-      bg: "from-amber-500 via-amber-600 to-orange-700 dark:from-amber-900 dark:via-amber-900/80",
-      badge: "bg-white/20 text-white border-white/30",
-      label: "AT RISK",
-      icon: <AlertTriangle className="h-4 w-4" />,
-    },
-    on_track: {
-      bg: "from-[#6B4EFF] via-[#7c5fff] to-[#5a3de8] dark:from-[#3d2b99] dark:via-[#4a34b5]",
-      badge: "bg-white/20 text-white border-white/30",
-      label: "ON TRACK",
-      icon: <CircleDot className="h-4 w-4" />,
-    },
-    met: {
-      bg: "from-emerald-500 via-emerald-600 to-teal-700 dark:from-emerald-900 dark:via-emerald-900/80",
-      badge: "bg-white/20 text-white border-white/30",
-      label: "SLA MET",
-      icon: <CheckCircle2 className="h-4 w-4" />,
-    },
-    paused: {
-      bg: "from-violet-600 via-violet-700 to-indigo-800 dark:from-violet-900 dark:via-violet-900/80",
-      badge: "bg-white/20 text-white border-white/30",
-      label: "PAUSED",
-      icon: <Timer className="h-4 w-4" />,
-    },
-    not_applicable: {
-      bg: "from-slate-500 via-slate-600 to-slate-700 dark:from-slate-800 dark:via-slate-800/80",
-      badge: "bg-white/20 text-white border-white/30",
-      label: "SLA NOT TRACKED",
-      icon: <Info className="h-4 w-4" />,
-    },
-  };
-
-  const h = heroStyle[sla.state] ?? heroStyle.on_track;
+  const suffix =
+    sla.state === "breached" ? `${sla.remaining.replace(/^-/, "")} overdue` :
+    sla.state === "attention" ? `${sla.remaining} remaining` : null;
 
   return (
-    <div className={cn("bg-gradient-to-br px-6 py-5 text-white", h.bg)}>
-      {/* Status row */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-widest", h.badge)}>
-          {h.icon} {h.label}
-        </span>
-        {sla.state === "breached" && (
-          <span className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-bold tracking-wide">
-            {sla.remaining} overdue
-          </span>
-        )}
-        {sla.state === "attention" && (
-          <span className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-bold">
-            {sla.remaining} remaining
-          </span>
-        )}
-        {sla.state === "not_applicable" && (
-          <span className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-medium">
-            No SLA on Requirement tickets
-          </span>
-        )}
-        <span className="ml-auto font-mono text-[11px] font-bold opacity-70">#{ticket.id}</span>
-      </div>
+    <div className="relative border-b border-border/60 bg-card">
+      <span aria-hidden className={cn("absolute left-0 top-0 bottom-0 w-[3px]", SLA_RAIL[sla.state] ?? SLA_RAIL.on_track)} />
+      <div className="flex flex-col gap-3.5 px-6 pt-5">
+        <button onClick={onClose} className="flex w-fit items-center gap-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-3.5 w-3.5" /> Tickets
+        </button>
 
-      {/* Title */}
-      <h2 className="mb-3 text-[17px] font-extrabold leading-snug tracking-tight opacity-95">
-        {ticket.subject}
-      </h2>
-
-      {/* Meta strip */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11.5px] font-medium opacity-80">
-        <span className="inline-flex items-center gap-1.5">
-          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", h.badge)}>
-            {sla.state === "not_applicable" ? "Requirement" : slaLabel.severity.split("—")[0].trim()}
-          </span>
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <User className="h-3 w-3" /> {requester} · {ticketDept(ticket)}
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <Clock className="h-3 w-3" /> {format(new Date(ticket.created_at), "d MMM yyyy")}
-        </span>
-        <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold", h.badge)}>
-          {p.label}
-        </span>
-        <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold", h.badge)}>
-          {s.label}
-        </span>
-      </div>
-
-      {/* Deadline fact — concrete info, not a repeat of the SLA Journey card's
-          milestone count right below it (that duplication was part of what
-          made this overlay feel cluttered). */}
-      {sla.state === "not_applicable" ? (
-        <p className="mt-4 text-[11.5px] font-medium leading-snug opacity-85">
-          {SLA_NOT_APPLICABLE_MESSAGE}
-        </p>
-      ) : (() => {
-          const resolution = milestones.find((m) => m.id === "resolution");
-          return resolution ? (
-            <div className="mt-4 flex items-center gap-1.5 text-[12px] font-semibold opacity-90">
-              <CalendarClock className="h-3.5 w-3.5 opacity-70" />
-              Due {format(resolution.deadline, "d MMM, h:mm a")} · {resolution.detail}
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2.5">
+              <h1 className="font-display text-[19px] font-extrabold leading-snug tracking-tight text-foreground">
+                {ticket.subject}
+              </h1>
+              <span className="shrink-0 font-mono text-[11px] text-muted-foreground/60">#{ticket.id}</span>
             </div>
-          ) : null;
-        })()}
+            <div className="mt-1 text-[12.5px] text-muted-foreground">
+              <span className="font-semibold text-foreground/80">{requester}</span> · {ticketDept(ticket)}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pb-4 text-[12.5px]">
+          <span className={cn("inline-flex items-center gap-1.5 font-bold", SLA_TEXT[sla.state] ?? SLA_TEXT.on_track)}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", SLA_RAIL[sla.state] ?? SLA_RAIL.on_track)} />
+            {SLA_STATE_LABEL[sla.state] ?? "On track"}{suffix ? ` · ${suffix}` : ""}
+          </span>
+          {sla.state !== "not_applicable" && <span className="text-muted-foreground">{p.label}</span>}
+          <span className="text-muted-foreground">{s.label}</span>
+          {sla.state === "not_applicable" ? (
+            <span className="text-muted-foreground">{SLA_NOT_APPLICABLE_MESSAGE}</span>
+          ) : resolution ? (
+            <span className="ml-auto flex items-center gap-1.5 text-muted-foreground">
+              <CalendarClock className="h-3.5 w-3.5" />
+              Due <b className="font-semibold text-foreground">{format(resolution.deadline, "d MMM, h:mm a")}</b>
+            </span>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 };
@@ -453,26 +250,71 @@ const CONFIDENCE_META: Record<AIAnalysis["confidence"], { label: string; tone: s
   low: { label: "Limited data", tone: "bg-slate-100 text-slate-500 dark:bg-slate-500/15 dark:text-slate-300" },
 };
 
-/** Renders narrative text, turning S1/M2-style citation tokens into hoverable evidence chips. */
-const renderNarrative = (text: string, citations: AIAnalysisCitation[]) => {
+// ─── Conversation chain codes — the single source of truth for CM#/SR#/PN# ──
+// numbering, shared by ConversationThread (which renders them) and the AI
+// narrative's citation chips (which now speak the same codes instead of a
+// separate S#/M# scheme, and can scroll straight to the message they cite).
+interface ConvCode { code: string; convId: number; tone: string }
+
+const codeConversations = (conversations: Conversation[]): Map<string, ConvCode> => {
+  const sorted = [...conversations].sort((a, b) => +parseISO(a.created_at) - +parseISO(b.created_at));
+  let c = 0, s = 0, p = 0;
+  const map = new Map<string, ConvCode>();
+  for (const conv of sorted) {
+    const code = conv.private ? `PN${++p}` : !conv.incoming ? `SR${++s}` : `CM${++c}`;
+    const tone = conv.private
+      ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+      : !conv.incoming
+        ? "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300"
+        : "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300";
+    map.set(conv.created_at, { code, convId: conv.id, tone });
+  }
+  return map;
+};
+
+/** Renders narrative text, turning S#/M#-style citation tokens into evidence
+ * chips. Segment (S#) citations stay hover-only (nothing to scroll to).
+ * Message (M#) citations are relabeled to their real CM#/SR#/PN# code and
+ * become clickable — click scrolls to and highlights that exact message. */
+const renderNarrative = (
+  text: string,
+  citations: AIAnalysisCitation[],
+  convCodes: Map<string, ConvCode>,
+  onCite: (convId: number) => void,
+) => {
   const byMarker = new Map(citations.map((c) => [c.marker, c]));
   return text.split(/(\b(?:S|M)\d+\b)/g).map((part, i) => {
     const c = byMarker.get(part);
     if (!c) return <span key={i}>{part}</span>;
     const when = c.at ? format(parseISO(c.at), "d MMM, h:mm a") : null;
+    const resolved = c.at ? convCodes.get(c.at) : undefined;
+    const label = resolved?.code ?? part;
+    const title = [c.label, when, c.detail].filter(Boolean).join(" · ");
+    if (!resolved) {
+      return (
+        <sup key={i} title={title} className="mx-0.5 cursor-help rounded bg-[#6B4EFF]/10 px-1 py-0.5 font-mono text-[9px] font-bold not-italic text-[#6B4EFF] dark:bg-violet-500/15 dark:text-violet-300">
+          {label}
+        </sup>
+      );
+    }
     return (
-      <sup
-        key={i}
-        title={[c.label, when, c.detail].filter(Boolean).join(" · ")}
-        className="mx-0.5 cursor-help rounded bg-[#6B4EFF]/10 px-1 py-0.5 font-mono text-[9px] font-bold not-italic text-[#6B4EFF] dark:bg-violet-500/15 dark:text-violet-300"
-      >
-        {part}
+      <sup key={i} className="mx-0.5">
+        <button
+          type="button"
+          title={`${title} — click to jump to it`}
+          onClick={() => onCite(resolved.convId)}
+          className={cn("cursor-pointer rounded px-1 py-0.5 font-mono text-[9px] font-bold not-italic underline decoration-dotted underline-offset-2 hover:brightness-95", resolved.tone)}
+        >
+          {label}
+        </button>
       </sup>
     );
   });
 };
 
-const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
+const AIAnalysisPanel = ({ ticket, conversations, onCitationClick }: {
+  ticket: Ticket; conversations: Conversation[]; onCitationClick: (convId: number) => void;
+}) => {
   // A first-time analysis is open to anonymous visitors (public-mode
   // Dashboard/Tickets are read-only-open) — it costs one Gemini call, ever,
   // per ticket, then serves from cache. Forcing a fresh regenerate and
@@ -483,12 +325,14 @@ const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
   const [status, setStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
   const [data, setData] = useState<AIAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Client-facing summary is the default view — this panel is meant to be shown
-  // to NSE, not just kept internal. The evidence-heavy version is opt-in.
-  const [showInternal, setShowInternal] = useState(false);
+  // "Lead with the answer" — evidence (timeline/attribution/benchmark/internal
+  // narrative) is collapsed by default; the hero above it already gives the
+  // verdict, so evidence is there to verify, not something everyone needs open.
+  const [showEvidence, setShowEvidence] = useState(false);
   const [disputeOpen, setDisputeOpen] = useState(false);
   const [disputeReason, setDisputeReason] = useState("");
   const [disputeState, setDisputeState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const convCodes = useMemo(() => codeConversations(conversations), [conversations]);
 
   const run = async (force: boolean) => {
     setStatus("loading");
@@ -562,91 +406,128 @@ const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
         )}
 
         {status === "loaded" && data && (
-          <div className="space-y-4">
+          <div className="space-y-5">
             {data.warning && (
               <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-700 dark:text-amber-300">
                 {data.warning}
               </div>
             )}
 
-            {/* ── Group 1: what happened, when ──────────────────────────── */}
-            <div>
-              <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">Status timeline</span>
-              <div className="flex h-6 w-full overflow-hidden rounded-md">
-                {data.segments.map((s) => (
-                  <div
-                    key={s.index}
-                    title={`${s.label} — ${format(parseISO(s.startsAt), "d MMM, h:mm a")} → ${format(parseISO(s.endsAt), "d MMM, h:mm a")}`}
-                    className={cn("h-full min-w-[3%] first:rounded-l-md last:rounded-r-md", STATUS_BAR_COLOR[s.status] ?? "bg-slate-400")}
-                    style={{ width: `${Math.max(3, (s.minutes / Math.max(1, data.segments.reduce((a, b) => a + b.minutes, 0))) * 100)}%` }}
-                  />
-                ))}
-              </div>
-              <div className="mt-1.5 flex justify-between text-[10px] font-mono text-muted-foreground/60">
-                <span>{format(parseISO(ticket.created_at), "d MMM")}, created</span>
-                <span>{data.segments.at(-1) ? format(parseISO(data.segments.at(-1)!.endsAt), "d MMM") : "now"}</span>
-              </div>
-            </div>
-
-            {/* ── Group 2: the takeaway — why, and the summary ──────────── */}
-            <div className="space-y-2.5 border-t border-border/40 pt-4">
+            {/* ── AI Brief — an operational briefing, not a report. Lead with
+                the answer; everything here is what a busy reader (or NSE)
+                needs at a glance. ───────────────────────────────────────── */}
+            <div className="space-y-3.5 rounded-xl border border-[#6B4EFF]/15 bg-gradient-to-b from-[#6B4EFF]/[0.04] to-transparent p-4">
               {data.primary_cause && (
-                <div className="flex items-center gap-2 rounded-lg bg-[#6B4EFF]/5 px-3 py-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[#6B4EFF] dark:text-violet-300">Why</span>
-                  <span className="text-[13px] font-semibold text-foreground">{data.primary_cause}</span>
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-[#6B4EFF] dark:text-violet-300">Why is this taking so long?</div>
+                  <div className="mt-1 font-display text-[15px] font-bold leading-snug text-foreground">{data.primary_cause}</div>
                 </div>
               )}
 
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {showInternal ? "Internal detail (with evidence)" : "Client-facing summary"}
-                </span>
-                <label className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
-                  Show internal detail
-                  <Switch checked={showInternal} onCheckedChange={setShowInternal} className="scale-75" />
-                </label>
-              </div>
-              <p className="text-[13px] leading-relaxed text-foreground -mt-1">
-                {showInternal
-                  ? (data.narrative ? renderNarrative(data.narrative, data.citations) : "No narrative available.")
-                  : data.formal_narrative}
-              </p>
-              {showInternal && <p className="text-[11px] text-muted-foreground/70">{data.completeness_note}</p>}
-            </div>
-
-            {/* ── Group 3: supporting evidence ──────────────────────────── */}
-            <div className="space-y-3 border-t border-border/40 pt-4">
-              <div>
-                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">Time attribution</span>
-                <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-secondary">
-                  <div className="h-full bg-[#6B4EFF]" style={{ width: `${data.attribution.aerchain}%` }} />
-                  <div className="h-full bg-sky-500" style={{ width: `${data.attribution.nse}%` }} />
-                  <div className="h-full bg-amber-500" style={{ width: `${data.attribution.engineering}%` }} />
+              {(data.benchmark || data.attribution) && (
+                <div className="flex items-center gap-5 border-y border-[#6B4EFF]/10 py-3">
+                  {data.benchmark?.multiple != null && (
+                    <div className="shrink-0">
+                      <div className="font-display text-[26px] font-extrabold leading-none text-[#6B4EFF] dark:text-violet-300">{data.benchmark.multiple}×</div>
+                      <div className="mt-1 text-[10.5px] text-muted-foreground">median resolution time</div>
+                    </div>
+                  )}
+                  <div className="flex-1 space-y-1.5">
+                    <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                      <div className="h-full bg-[#6B4EFF]" style={{ width: `${data.attribution.aerchain}%` }} />
+                      <div className="h-full bg-sky-500" style={{ width: `${data.attribution.nse}%` }} />
+                      <div className="h-full bg-amber-500" style={{ width: `${data.attribution.engineering}%` }} />
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10.5px] text-muted-foreground">
+                      <span><i className="inline-block h-1.5 w-1.5 rounded-sm bg-[#6B4EFF] mr-1 align-[1px]" />Aerchain {data.attribution.aerchain}%</span>
+                      <span><i className="inline-block h-1.5 w-1.5 rounded-sm bg-sky-500 mr-1 align-[1px]" />{ticketCompany(ticket)} {data.attribution.nse}%</span>
+                      <span><i className="inline-block h-1.5 w-1.5 rounded-sm bg-amber-500 mr-1 align-[1px]" />Engineering {data.attribution.engineering}%</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[10.5px] text-muted-foreground">
-                  <span><i className="inline-block h-2 w-2 rounded-sm bg-[#6B4EFF] mr-1 align-[-1px]" />Aerchain support · {data.attribution.aerchain}%</span>
-                  <span><i className="inline-block h-2 w-2 rounded-sm bg-sky-500 mr-1 align-[-1px]" />Waiting on {ticketCompany(ticket)} · {data.attribution.nse}%</span>
-                  <span><i className="inline-block h-2 w-2 rounded-sm bg-amber-500 mr-1 align-[-1px]" />Engineering · {data.attribution.engineering}%</span>
-                </div>
-              </div>
+              )}
 
               {data.benchmark && (
-                <div className="flex items-start gap-2 rounded-lg bg-secondary/40 px-3 py-2 text-[11.5px] text-foreground">
-                  <BarChart3 className="h-3.5 w-3.5 shrink-0 mt-0.5 text-muted-foreground" />
-                  <span>
-                    Similar <span className="font-mono">{ticket.ticket_type ?? "tickets"}</span> resolve in a median of{" "}
-                    <b>{data.benchmark.medianHours}h</b> ({data.benchmark.sampleSize} tickets). This one: <b>{data.benchmark.ticketHours}h</b>
-                    {data.benchmark.multiple != null && <> ({data.benchmark.multiple}× the median)</>}.
-                  </span>
+                <div className="flex items-center gap-6 text-[12px]">
+                  <div>
+                    <div className="text-[10.5px] text-muted-foreground">Similar {ticket.ticket_type ?? "tickets"}</div>
+                    <div className="font-semibold">{data.benchmark.medianHours}h <span className="font-normal text-muted-foreground">median · {data.benchmark.sampleSize} tickets</span></div>
+                  </div>
+                  <div className="h-6 w-px bg-[#6B4EFF]/15" />
+                  <div>
+                    <div className="text-[10.5px] text-muted-foreground">This ticket</div>
+                    <div className="font-semibold text-rose-600 dark:text-rose-400">{data.benchmark.ticketHours}h</div>
+                  </div>
                 </div>
               )}
 
               {data.prevention_tip && (
-                <div className="flex items-start gap-2 rounded-lg bg-[#6B4EFF]/5 px-3 py-2 text-[11.5px] text-foreground">
+                <div className="flex items-start gap-2 rounded-lg bg-card border border-[#6B4EFF]/10 px-3 py-2.5 text-[12.5px] text-foreground">
                   <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5 text-[#6B4EFF]" />
-                  <span>{data.prevention_tip}</span>
+                  <span><b className="font-semibold">Recommended next step —</b> {data.prevention_tip}</span>
                 </div>
               )}
+
+              <div className="flex items-center gap-4 text-[12px] font-semibold text-[#6B4EFF] dark:text-violet-300">
+                <button onClick={() => setShowEvidence((v) => !v)}>{showEvidence ? "Hide reasoning" : "Show reasoning"}</button>
+                <button
+                  className="flex items-center gap-1"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(data.formal_narrative ?? "");
+                      showSuccess("Copied — ready to paste into a customer email");
+                    } catch { /* clipboard denied — fail quietly */ }
+                  }}
+                >
+                  <Copy className="h-3 w-3" /> Copy for email
+                </button>
+              </div>
+
+              {showEvidence && (
+                <div className="space-y-2 border-t border-[#6B4EFF]/10 pt-3">
+                  <p className="text-[13px] leading-relaxed text-foreground">
+                    {data.narrative ? renderNarrative(data.narrative, data.citations, convCodes, onCitationClick) : "No narrative available."}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/70">{data.completeness_note}</p>
+                </div>
+              )}
+            </div>
+
+            {/* ── Timeline — real status transitions, not a solid bar. ──── */}
+            <div>
+              <div className="mb-3 text-[11px] font-bold uppercase tracking-wide text-muted-foreground/70">Timeline</div>
+              <div className="relative mb-4 px-1">
+                <div className="absolute left-1 right-1 top-[5px] h-px bg-border" />
+                <div className="relative flex justify-between">
+                  {[
+                    { date: ticket.created_at, label: "Created", color: "bg-muted-foreground/50" },
+                    ...(data.segments.at(-1) ? [{
+                      date: data.segments.at(-1)!.endsAt,
+                      label: SLA_DONE_STATUSES.includes(ticket.status) ? "Resolved" : "Now",
+                      color: SLA_RAIL[computeSLA(ticket).state] ?? SLA_RAIL.on_track,
+                    }] : []),
+                  ].map((e, i, arr) => (
+                    <div key={i} className={cn("flex flex-col gap-2", i === 0 ? "items-start" : i === arr.length - 1 ? "items-end" : "items-center")}>
+                      <span className={cn("h-2.5 w-2.5 rounded-full ring-4 ring-card", e.color)} />
+                      <div className={cn("text-[10.5px] leading-tight text-muted-foreground whitespace-nowrap", i === arr.length - 1 && "text-right")}>
+                        {format(parseISO(e.date), "d MMM")}<br /><span className="font-semibold text-foreground">{e.label}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-lg border border-border/60">
+                {data.segments.map((s, i) => (
+                  <div key={s.index} className={cn("flex items-center gap-3 px-3.5 py-2 text-[12px]", i % 2 === 1 && "bg-secondary/30")}>
+                    <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_BAR_COLOR[s.status] ?? "bg-slate-400")} />
+                    <span className="w-16 shrink-0 font-mono text-[10.5px] text-muted-foreground/70">{format(parseISO(s.startsAt), "d MMM")}</span>
+                    <span className="font-medium">{s.label}</span>
+                    <span className="ml-auto shrink-0 text-muted-foreground/70">
+                      {(() => { const d = Math.floor(s.minutes / 1440), h = Math.floor((s.minutes % 1440) / 60); return d > 0 ? `${d}d ${h}h` : `${h}h ${s.minutes % 60}m`; })()}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* ── Actions — Regenerate and Dispute both write with a real
@@ -709,9 +590,40 @@ const AIAnalysisPanel = ({ ticket }: { ticket: Ticket }) => {
 // Keyed by ticket.id from the parent, so switching tickets remounts this
 // (and re-runs the scroll-to-latest effect) instead of carrying over state.
 
+// Splits a sanitized message body into the visible reply and any trailing
+// quoted email chain (the "On Aug 12, X wrote: > ..." block most email
+// clients append). Folding that away is what makes a 30-message thread
+// readable — the quote is one click away, never lost.
+const splitQuoted = (html: string): { main: string; quoted: string | null } => {
+  if (typeof document === "undefined" || !html) return { main: html, quoted: null };
+  const container = document.createElement("div");
+  container.innerHTML = html;
+  const marker = container.querySelector("blockquote, .gmail_quote, .quoted-text, .freshdesk_quote, .moz-cite-prefix");
+  if (!marker) return { main: html, quoted: null };
+  const quotedContainer = document.createElement("div");
+  let node: ChildNode | null = marker;
+  while (node) {
+    const next: ChildNode | null = node.nextSibling;
+    quotedContainer.appendChild(node);
+    node = next;
+  }
+  const main = container.innerHTML;
+  // If folding the quote would leave nothing visible, it wasn't a quote —
+  // it was the whole message. Don't fold it away.
+  if (!main.replace(/<[^>]+>/g, "").trim()) return { main: quotedContainer.innerHTML, quoted: null };
+  return { main, quoted: quotedContainer.innerHTML };
+};
+
 const ConversationThread = ({ ticket, conversations, ackId }: { ticket: Ticket; conversations: Conversation[]; ackId: number | null }) => {
   const requester = requesterDisplayName(ticket);
   const lastRef = useRef<HTMLDivElement>(null);
+  const [expandedQuotes, setExpandedQuotes] = useState<Set<number>>(new Set());
+  const toggleQuote = (id: number) =>
+    setExpandedQuotes((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   // Open straight to the latest message — the newest update is what someone
   // opening a ticket wants first, not the oldest message after a long scroll.
@@ -735,11 +647,8 @@ const ConversationThread = ({ ticket, conversations, ackId }: { ticket: Ticket; 
   }
 
   const sorted = [...conversations].sort((a, b) => +parseISO(a.created_at) - +parseISO(b.created_at));
-  let clientN = 0, supportN = 0, noteN = 0;
-  const coded = sorted.map((conv) => ({
-    conv,
-    code: conv.private ? `PN${++noteN}` : !conv.incoming ? `SR${++supportN}` : `CM${++clientN}`,
-  }));
+  const codeMap = codeConversations(conversations);
+  const coded = sorted.map((conv) => ({ conv, code: codeMap.get(conv.created_at)?.code ?? "" }));
 
   return (
     <div className="relative">
@@ -749,7 +658,8 @@ const ConversationThread = ({ ticket, conversations, ackId }: { ticket: Ticket; 
         {coded.map(({ conv, code }, i) => {
           const isAgent = !conv.incoming;
           const author = conv.incoming ? requester : (ticket.responder_name ?? "Aerchain Support");
-          const html = sanitize(conv.body || conv.body_text || "");
+          const { main: html, quoted } = splitQuoted(sanitize(conv.body || conv.body_text || ""));
+          const quoteOpen = expandedQuotes.has(conv.id);
           const isAck = conv.id === ackId;
           const refProp = i === coded.length - 1 ? { ref: lastRef } : {};
           const when = format(new Date(conv.created_at), "MMM d, h:mm a");
@@ -760,7 +670,7 @@ const ConversationThread = ({ ticket, conversations, ackId }: { ticket: Ticket; 
               : "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300";
 
           return (
-            <div key={conv.id} {...refProp} className="relative flex gap-3">
+            <div key={conv.id} {...refProp} data-conv-id={conv.id} className="relative flex gap-3 rounded-lg transition-shadow">
               <Avatar className="relative z-10 mt-0.5 h-8 w-8 shrink-0 ring-4 ring-background">
                 <AvatarFallback className={cn(
                   "text-[10px] font-bold text-white",
@@ -796,6 +706,21 @@ const ConversationThread = ({ ticket, conversations, ackId }: { ticket: Ticket; 
                       : "border-border/50 bg-card"
                 )}>
                   <div className="fd-html text-foreground/85" dangerouslySetInnerHTML={{ __html: html }} />
+                  {quoted && (
+                    <div className="mt-2 border-t border-border/40 pt-2">
+                      <button
+                        onClick={() => toggleQuote(conv.id)}
+                        className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                      >
+                        <ChevronRight className={cn("h-3 w-3 transition-transform", quoteOpen && "rotate-90")} />
+                        <Mail className="h-3 w-3" />
+                        {quoteOpen ? "Hide quoted email" : "Show quoted email"}
+                      </button>
+                      {quoteOpen && (
+                        <div className="fd-html mt-2 border-l-2 border-border/50 pl-3 text-foreground/60" dangerouslySetInnerHTML={{ __html: quoted }} />
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -808,6 +733,115 @@ const ConversationThread = ({ ticket, conversations, ackId }: { ticket: Ticket; 
 
 // ─── Main TicketDrawer ────────────────────────────────────────────────────────
 
+// ─── Context panel — Status / Severity / Owner / Due / SLA at a glance,
+// sticky alongside the AI brief so the reader never has to scroll back up
+// to the header to check them. ──────────────────────────────────────────
+
+const ContextPanel = ({ ticket, milestones }: { ticket: Ticket; milestones: Milestone[] }) => {
+  const sla = computeSLA(ticket);
+  const p = PRIORITY_META[ticket.priority] ?? { label: String(ticket.priority), tone: "", dot: "" };
+  const s = STATUS_META[ticket.status] ?? { label: `Status ${ticket.status}`, tone: "" };
+  const resolution = milestones.find((m) => m.id === "resolution");
+
+  const rows: { label: string; value: ReactNode }[] = [
+    { label: "Status", value: s.label },
+    { label: "Severity", value: p.label },
+    { label: "Owner", value: ticket.responder_name || "Unassigned" },
+    ...(resolution && sla.state !== "not_applicable"
+      ? [{ label: "Due", value: format(resolution.deadline, "d MMM, h:mm a") }]
+      : []),
+    {
+      label: "SLA",
+      value: (
+        <span className={cn("inline-flex items-center gap-1.5 font-semibold", SLA_TEXT[sla.state] ?? SLA_TEXT.on_track)}>
+          <span className={cn("h-1.5 w-1.5 rounded-full", SLA_RAIL[sla.state] ?? SLA_RAIL.on_track)} />
+          {SLA_STATE_LABEL[sla.state] ?? "On track"}
+        </span>
+      ),
+    },
+  ];
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-card p-4">
+      <div className="mb-3 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">Details</div>
+      <dl className="space-y-2.5">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center justify-between gap-3 text-[12.5px]">
+            <dt className="text-muted-foreground">{r.label}</dt>
+            <dd className="font-medium text-foreground text-right">{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+};
+
+// ─── Workspace body — Overview / Conversation tabs. Deliberately no
+// Activity or Files tab: neither has a real data source behind it yet, and
+// a tab that opens onto nothing is worse than not offering it. ─────────
+
+const TicketWorkspaceBody = ({
+  ticket, conversations, milestones, ackId, onCitationClick,
+}: {
+  ticket: Ticket; conversations: Conversation[]; milestones: Milestone[]; ackId: number | null;
+  onCitationClick: (id: number) => void;
+}) => {
+  const [tab, setTab] = useState<"overview" | "conversation">("overview");
+  const requester = requesterDisplayName(ticket);
+
+  return (
+    <div>
+      <div className="flex items-center gap-1 border-b border-border/60 px-6">
+        {([
+          { id: "overview" as const, label: "Overview" },
+          { id: "conversation" as const, label: `Conversation · ${conversations.length}` },
+        ]).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "relative px-3 py-3 text-[12.5px] font-semibold transition-colors",
+              tab === t.id ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {t.label}
+            {tab === t.id && <span className="absolute inset-x-0 -bottom-px h-[2px] rounded-full bg-[#6B4EFF]" />}
+          </button>
+        ))}
+      </div>
+
+      {tab === "overview" ? (
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5 p-6">
+          <AIAnalysisPanel key={ticket.id} ticket={ticket} conversations={conversations} onCitationClick={onCitationClick} />
+          <div className="lg:sticky lg:top-0 lg:self-start">
+            <ContextPanel ticket={ticket} milestones={milestones} />
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-5 p-6">
+          {ticket.description && (
+            <div className="rounded-2xl border border-border/50 bg-secondary/25 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Avatar className="h-7 w-7">
+                  <AvatarFallback className={cn("text-[10px] font-bold text-white", avatarColor(requester))}>
+                    {initials(requester)}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <div className="text-[12.5px] font-semibold leading-none">{requester}</div>
+                  <div className="text-[10.5px] text-muted-foreground">opened this ticket · {format(new Date(ticket.created_at), "MMM d, yyyy · h:mm a")}</div>
+                </div>
+              </div>
+              <div className="fd-html text-[13px] text-foreground/85" dangerouslySetInnerHTML={{ __html: sanitize(ticket.description) }} />
+            </div>
+          )}
+          <ConversationThread key={ticket.id} ticket={ticket} conversations={conversations} ackId={ackId} />
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface TicketDrawerProps {
   ticket: Ticket | null;
   conversations: Conversation[];
@@ -819,105 +853,34 @@ export const TicketDrawer = ({ ticket, conversations, isOpen, onClose }: TicketD
   if (!ticket) return null;
 
   const milestones = buildMilestones(ticket, conversations);
-  const requester = requesterDisplayName(ticket);
-  const sla = computeSLA(ticket);
   // First public agent reply = the acknowledgment message; tag it in the thread.
   const ackId = conversations
     .filter((c) => !c.incoming && !c.private)
     .sort((a, b) => +parseISO(a.created_at) - +parseISO(b.created_at))[0]?.id ?? null;
 
-  const slaPillTone =
-    sla.state === "met" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" :
-    sla.state === "breached" ? "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300" :
-    sla.state === "attention" ? "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" :
-    sla.state === "paused" ? "bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" :
-    sla.state === "not_applicable" ? "bg-slate-100 text-slate-500 dark:bg-slate-500/15 dark:text-slate-300" :
-    "bg-[#6B4EFF]/10 text-[#6B4EFF] dark:text-violet-300";
+  // Scrolls to and briefly rings the conversation entry a citation refers to.
+  // Plain DOM, not React state — this is a one-shot visual pulse, not
+  // something any render actually needs to know about.
+  const onCitationClick = (convId: number) => {
+    const el = document.querySelector(`[data-conv-id="${convId}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("ring-2", "ring-[#6B4EFF]", "ring-offset-2", "ring-offset-background");
+    setTimeout(() => el.classList.remove("ring-2", "ring-[#6B4EFF]", "ring-offset-2", "ring-offset-background"), 1600);
+  };
 
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
-      <SheetContent side="right" floating className="gap-0 p-0">
-
-        {/* ── Breach / Status Hero ────────────────────────────────────────── */}
-        <BreachHero ticket={ticket} milestones={milestones} />
-
+      <SheetContent side="right" floating className="gap-0 p-0 sm:max-w-[1180px]">
+        <TicketHeader ticket={ticket} milestones={milestones} onClose={onClose} />
         <ScrollArea className="flex-1">
-          <div className="space-y-5 p-5">
-
-            {/* ── SLA Section: gauge + DNA strand side by side ───────────── */}
-            <div className="rounded-2xl border border-border/60 bg-card overflow-hidden shadow-sm">
-              <div className="flex items-center justify-between border-b border-border/40 bg-secondary/20 px-4 py-3">
-                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">SLA Journey</span>
-                <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", slaPillTone)}>
-                  <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
-                  {sla.label}
-                </span>
-              </div>
-              {sla.state === "not_applicable" ? (
-                <div className="flex items-start gap-3 px-4 py-5">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-500/15 dark:text-slate-300">
-                    <Info className="h-4 w-4" />
-                  </span>
-                  <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-                    {SLA_NOT_APPLICABLE_MESSAGE}
-                  </p>
-                </div>
-              ) : (
-                <div className="flex gap-0">
-                  {/* Circular gauge */}
-                  <div className="flex shrink-0 flex-col items-center justify-center border-r border-border/40 px-5 py-5 gap-1">
-                    <CircularGauge
-                      met={milestones.filter(m => m.status === "met").length}
-                      total={milestones.length}
-                      state={computeSLA(ticket).state}
-                    />
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">SLA Health</span>
-                    <span className="text-[18px] font-extrabold text-foreground">
-                      {Math.round((milestones.filter(m => m.status === "met").length / milestones.length) * 100)}%
-                    </span>
-                  </div>
-
-                  {/* DNA Strand */}
-                  <div className="flex-1 px-4 py-5">
-                    <DNAStrand milestones={milestones} />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* ── SLA Autopsy: AI Analysis (click to run, never automatic) ── */}
-            <AIAnalysisPanel key={ticket.id} ticket={ticket} />
-
-            {/* ── Original description ────────────────────────────────────── */}
-            {ticket.description && (
-              <div className="rounded-2xl border border-border/50 bg-secondary/25 p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <Avatar className="h-7 w-7">
-                    <AvatarFallback className={cn("text-[10px] font-bold text-white", avatarColor(requester))}>
-                      {initials(requester)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <div className="text-[12.5px] font-semibold leading-none">{requester}</div>
-                    <div className="text-[10.5px] text-muted-foreground">opened this ticket · {format(new Date(ticket.created_at), "MMM d, yyyy · h:mm a")}</div>
-                  </div>
-                </div>
-                <div className="fd-html text-[13px] text-foreground/85" dangerouslySetInnerHTML={{ __html: sanitize(ticket.description) }} />
-              </div>
-            )}
-
-            {/* ── Conversation divider ────────────────────────────────────── */}
-            <div className="flex items-center gap-3">
-              <div className="h-px flex-1 bg-border/60" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/60">
-                Conversation · {conversations.length}
-              </span>
-              <div className="h-px flex-1 bg-border/60" />
-            </div>
-
-            {/* ── Conversation thread ─────────────────────────────────────── */}
-            <ConversationThread key={ticket.id} ticket={ticket} conversations={conversations} ackId={ackId} />
-          </div>
+          <TicketWorkspaceBody
+            ticket={ticket}
+            conversations={conversations}
+            milestones={milestones}
+            ackId={ackId}
+            onCitationClick={onCitationClick}
+          />
         </ScrollArea>
       </SheetContent>
     </Sheet>
