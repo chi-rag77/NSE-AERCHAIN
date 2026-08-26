@@ -100,7 +100,7 @@ export const VerdictHero = ({ summary, trend, rangeFilter, companyLabel = COMPAN
             <div className="flex items-center gap-5">
               <Gauge value={summary.slaCompliance} color={t.color} />
               <div className="hidden flex-col gap-1 sm:flex">
-                <Delta value={summary.slaDelta} unit="pts" goodWhenUp />
+                <Delta pct={summary.slaDelta} unit="pts" goodWhenUp noBaselineHint={`No tickets were resolved in the previous ${summary.windowDays} days to compare against`} />
                 <span className="max-w-[120px] text-[11px] leading-snug text-muted-foreground">
                   vs previous {summary.windowDays} days
                 </span>
@@ -126,7 +126,18 @@ export const VerdictHero = ({ summary, trend, rangeFilter, companyLabel = COMPAN
                   <div className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">{p.label}</div>
                   <div className="mt-1.5 flex items-center justify-between gap-2">
                     <span className="font-display text-[26px] font-black leading-none tracking-tight">{p.value.toLocaleString()}</span>
-                    <Delta value={p.delta} unit="%" goodWhenUp={p.goodWhenUp} small />
+                    <Delta
+                      pct={p.delta?.pct ?? null}
+                      abs={p.delta?.abs ?? null}
+                      unit="%"
+                      goodWhenUp={p.goodWhenUp}
+                      small
+                      noBaselineHint={
+                        p.key === "breaching"
+                          ? "Live snapshot — breach state isn't recorded over time, so there's no prior period to compare against"
+                          : `Not enough history in the previous ${summary.windowDays} days to compare`
+                      }
+                    />
                   </div>
                 </div>
               ))}
@@ -181,25 +192,52 @@ export const VerdictHero = ({ summary, trend, rangeFilter, companyLabel = COMPAN
   );
 };
 
-const Delta = ({ value, unit, goodWhenUp, small }: {
-  value: number | null; unit: string; goodWhenUp: boolean; small?: boolean;
+/**
+ * Period-over-period change pill.
+ *
+ * Shows a percentage only when one is informative. When the prior window is
+ * too thin (or the ratio is so lopsided it reads as a glitch) it falls back to
+ * the absolute change — "+15" instead of "+214%" — which is always true and
+ * always legible. `null` means there is no comparable prior reading at all.
+ */
+const Delta = ({ pct, abs, unit, goodWhenUp, small, noBaselineHint }: {
+  pct: number | null;
+  /** Absolute fallback. Omit for figures where it has no meaning (e.g. a
+   *  compliance percentage, where the pts change IS the absolute change). */
+  abs?: number | null;
+  unit: string;
+  goodWhenUp: boolean;
+  small?: boolean;
+  noBaselineHint?: string;
 }) => {
   const base = cn(
     "inline-flex w-fit items-center gap-0.5 rounded-full px-2 py-0.5 font-bold",
     small ? "text-[10px]" : "text-[11px]",
   );
+
+  // Prefer the percentage; fall back to the absolute change; else no baseline.
+  const value = pct ?? abs ?? null;
+  const suffix = pct !== null ? unit : "";
+
   if (value === null) {
-    return <span className={cn(base, "bg-secondary text-muted-foreground")}>new</span>;
+    return (
+      <span className={cn(base, "bg-secondary text-muted-foreground")} title={noBaselineHint}>
+        no baseline
+      </span>
+    );
   }
   if (value === 0) {
-    return <span className={cn(base, "bg-secondary text-muted-foreground")}><Minus className="h-3 w-3" /> 0{unit}</span>;
+    return <span className={cn(base, "bg-secondary text-muted-foreground")}><Minus className="h-3 w-3" /> 0{suffix}</span>;
   }
   const up = value > 0;
   const good = up === goodWhenUp;
   return (
-    <span className={cn(base, good ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/10 text-rose-600 dark:text-rose-400")}>
+    <span
+      className={cn(base, good ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-rose-500/10 text-rose-600 dark:text-rose-400")}
+      title={pct === null ? "Previous period is too small for a meaningful percentage — showing the absolute change" : undefined}
+    >
       {up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-      {up ? "+" : ""}{value}{unit}
+      {up ? "+" : ""}{value}{suffix}
     </span>
   );
 };

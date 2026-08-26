@@ -33,9 +33,28 @@ export const windowedTickets = (tickets: Ticket[], days: number = WINDOW_DAYS): 
   return tickets.filter((t) => within(t.created_at, start, now));
 };
 
-const pctDelta = (curr: number, prev: number): number | null => {
-  if (prev === 0) return curr === 0 ? 0 : null;          // null → "new"
-  return Math.round(((curr - prev) / prev) * 100);
+/** Prior-window volume needed before a percentage change means anything. A
+ *  percentage off a tiny base is arithmetically true but useless: 3 resolved
+ *  last period vs 257 this period is "+8467%", which tells a reader nothing
+ *  except that we had almost no history to compare against. */
+const MIN_DELTA_BASELINE = 10;
+/** Above this, a percentage stops informing and starts looking broken. */
+const MAX_SENSIBLE_PCT = 300;
+
+/** A period-over-period change, carrying both readings so the UI can show
+ *  whichever is actually informative. `pct` is null whenever a percentage
+ *  would mislead (base too small, or the ratio is so large it reads as a
+ *  glitch); `abs` is always true and always meaningful. */
+export interface Trend {
+  pct: number | null;
+  abs: number;
+}
+
+const trend = (curr: number, prev: number): Trend => {
+  const abs = curr - prev;
+  if (prev < MIN_DELTA_BASELINE) return { pct: null, abs };
+  const pct = Math.round(((curr - prev) / prev) * 100);
+  return { pct: Math.abs(pct) > MAX_SENSIBLE_PCT ? null : pct, abs };
 };
 
 /* ----------------------------------------------------------------------------
@@ -47,7 +66,9 @@ export interface PulseStat {
   key: string;
   label: string;
   value: number;
-  delta: number | null;       // % change vs previous window; null = no prior data
+  /** Change vs the previous window, or null when this stat has no comparable
+   *  prior reading at all (see the At Risk / Breached note in buildAssurance). */
+  delta: Trend | null;
   /** is an increase a good thing? (resolved↑ good, breaching↑ bad) */
   goodWhenUp: boolean;
 }
@@ -101,10 +122,12 @@ export const buildAssurance = (
     const s = computeSLA(t).state;
     if (s === "breached" || s === "attention") breaching++;
   });
-  const breachingPrev = tickets.filter((t) => within(t.created_at, prevStart, prevEnd) &&
-    computeSLA(t).state === "breached").length;
-  // Only show a delta when the prior base is large enough to be meaningful.
-  const breachingDelta = breachingPrev >= 3 ? pctDelta(breaching, breachingPrev) : null;
+  // No delta for this one, deliberately. `breaching` is a live snapshot of the
+  // whole open population; the only "previous" figure available was the count
+  // of tickets *created in the prior window* that are breached today — a
+  // different population entirely, so the comparison was apples-to-oranges.
+  // A true prior snapshot would need breach state recorded over time, which
+  // isn't captured yet.
 
   const verdict: Verdict =
     curComp >= SLA_TARGET && breaching === 0 ? "healthy" :
@@ -119,10 +142,10 @@ export const buildAssurance = (
         : `We're focused on lifting ${companyLabel} service levels — currently ${curComp}% SLA compliance, with ${tk(breaching)} being prioritised to bring performance back to target.`;
 
   const pulse: PulseStat[] = [
-    { key: "new", label: "New", value: createdCur.length, delta: pctDelta(createdCur.length, createdPrev.length), goodWhenUp: false },
-    { key: "resolved", label: "Resolved", value: resolvedCur.length, delta: pctDelta(resolvedCur.length, resolvedPrev.length), goodWhenUp: true },
-    { key: "backlog", label: "Open Backlog", value: openNow, delta: pctDelta(openNow, openPrev), goodWhenUp: false },
-    { key: "breaching", label: "At Risk / Breached", value: breaching, delta: breachingDelta, goodWhenUp: false },
+    { key: "new", label: "New", value: createdCur.length, delta: trend(createdCur.length, createdPrev.length), goodWhenUp: false },
+    { key: "resolved", label: "Resolved", value: resolvedCur.length, delta: trend(resolvedCur.length, resolvedPrev.length), goodWhenUp: true },
+    { key: "backlog", label: "Open Backlog", value: openNow, delta: trend(openNow, openPrev), goodWhenUp: false },
+    { key: "breaching", label: "At Risk / Breached", value: breaching, delta: null, goodWhenUp: false },
   ];
 
   return {
