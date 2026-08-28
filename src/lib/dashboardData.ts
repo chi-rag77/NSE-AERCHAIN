@@ -133,13 +133,26 @@ export const buildAssurance = (
     curComp >= SLA_TARGET && breaching === 0 ? "healthy" :
     curComp >= 85 ? "watch" : "at_risk";
 
-  const tk = (n: number) => `${n} ticket${n === 1 ? "" : "s"}`;
-  const statement =
-    verdict === "healthy"
-      ? `${companyLabel} support is in great shape — ${curComp}% SLA compliance and every ticket comfortably on track.`
-      : verdict === "watch"
-        ? `${companyLabel} support is tracking well at ${curComp}% SLA compliance. We're actively progressing ${tk(breaching)} to keep service levels strong.`
-        : `We're focused on lifting ${companyLabel} service levels — currently ${curComp}% SLA compliance, with ${tk(breaching)} being prioritised to bring performance back to target.`;
+  // Context-aware monitoring statement: never misleading about what the
+  // numbers mean. Breaching = currently at-risk or breached (live SLA
+  // snapshot), NOT work queue. Compliance = % of resolved in-window that met
+  // SLA, or live state across all when nothing resolved yet.
+  const generateStatement = (): string => {
+    const breachingText = breaching === 0 ? "no at-risk tickets" : `${breaching} ${breaching === 1 ? "ticket" : "tickets"} at risk or breached`;
+
+    if (verdict === "healthy") {
+      return `${companyLabel} support is in great shape — ${curComp}% SLA compliance and every ticket comfortably on track.`;
+    }
+
+    if (verdict === "watch") {
+      return `${companyLabel} support is tracking well at ${curComp}% SLA compliance. We have ${breachingText} — prioritizing these to maintain service strength.`;
+    }
+
+    // "at_risk" verdict
+    return `We're focused on lifting ${companyLabel} service levels. Currently at ${curComp}% SLA compliance with ${breachingText} — our team is prioritizing these to restore compliance to target (${SLA_TARGET}%).`;
+  };
+
+  const statement = generateStatement();
 
   const pulse: PulseStat[] = [
     { key: "new", label: "New", value: createdCur.length, delta: trend(createdCur.length, createdPrev.length), goodWhenUp: false },

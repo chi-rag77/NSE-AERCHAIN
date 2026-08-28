@@ -26,7 +26,9 @@ export const AppShell = ({ children }: Props) => {
   // comment), so spamming this button can't run up Freshdesk API cost or
   // hit its rate limit regardless of who's clicking.
   const [cmdOpen, setCmdOpen] = useState(false);
-  const [company, setCompany] = useState<string>(ALL_CUSTOMERS);
+  // Default to NSE instead of ALL_CUSTOMERS — NSE is the primary customer
+  // and users want to see NSE-specific data on first load.
+  const [company, setCompany] = useState<string>("NSE");
 
   const [selected, setSelected] = useState<Ticket | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
