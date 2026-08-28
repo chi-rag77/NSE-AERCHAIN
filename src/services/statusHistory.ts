@@ -71,14 +71,28 @@ export interface StatusShare {
   percent: number;
 }
 
-/** Share of total elapsed time spent in each status, biggest first — the
+/** Resolved and Closed are terminal. Time recorded against them is time AFTER
+ *  the work finished, so it can never explain why a ticket was slow.
+ *
+ *  Excluding it also defuses a data-provenance trap: migration 0007 backfilled
+ *  every pre-existing ticket with one synthetic row stamping its CURRENT status
+ *  at its CREATION timestamp. On an already-closed ticket that reads as "Closed
+ *  since the day it opened", which would otherwise swallow the ticket's entire
+ *  life and produce nonsense like "spent 18d 18h in Closed — 100% of its
+ *  resolution time". */
+const isTerminal = (status: number) => SLA_DONE_STATUSES.includes(status);
+
+/** Share of *open* time spent in each working status, biggest first — the
  *  numbers behind the donut and its legend. Purely arithmetic on real spans;
- *  nothing here is estimated or model-generated. */
+ *  nothing here is estimated or model-generated. Returns [] when no working
+ *  time was ever recorded, which callers must treat as "we don't know where
+ *  the time went" rather than inventing a dominant status. */
 export const statusBreakdown = (segments: AIAnalysisSegment[]): StatusShare[] => {
-  const total = segments.reduce((n, s) => n + s.minutes, 0);
+  const working = segments.filter((s) => !isTerminal(s.status));
+  const total = working.reduce((n, s) => n + s.minutes, 0);
   if (total === 0) return [];
   const byStatus = new Map<number, StatusShare>();
-  for (const s of segments) {
+  for (const s of working) {
     const row = byStatus.get(s.status) ?? { status: s.status, label: s.label, minutes: 0, percent: 0 };
     row.minutes += s.minutes;
     byStatus.set(s.status, row);

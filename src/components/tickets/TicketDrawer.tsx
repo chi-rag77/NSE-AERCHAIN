@@ -420,6 +420,12 @@ const AIAnalysisPanel = ({ ticket, conversations, segments, onCitationClick, onD
   const dominant = breakdown[0];
   const sla = computeSLA(ticket);
   const isDone = SLA_DONE_STATUSES.includes(ticket.status);
+  // End-to-end elapsed time — always true, and the honest thing to quote when
+  // the status history is too thin to say where the time actually went.
+  const openMinutes = differenceInMinutes(
+    isDone ? parseISO(ticket.updated_at) : new Date(),
+    parseISO(ticket.created_at),
+  );
   const legend = useMemo(() => {
     const withHex = breakdown.map((b) => ({ ...b, hex: STATUS_HEX[b.status] ?? OTHER_HEX }));
     if (withHex.length <= 3) return withHex;
@@ -465,8 +471,19 @@ const AIAnalysisPanel = ({ ticket, conversations, segments, onCitationClick, onD
               <>
                 The ticket spent <b className="font-semibold text-foreground">{fmtDiff(dominant.minutes)}</b> in{" "}
                 <b className="font-semibold text-foreground">“{dominant.label}”</b>, which accounted for{" "}
-                <b className="font-semibold text-foreground">{dominant.percent}%</b> of its total{" "}
-                {isDone ? "resolution" : "elapsed"} time.
+                <b className="font-semibold text-foreground">{dominant.percent}%</b> of its open time.
+              </>
+            ) : segments.length ? (
+              // History exists but records no working time — typically a ticket
+              // whose only row is the backfilled "current status at creation"
+              // stamp. Say what we actually know instead of blaming a status.
+              <>
+                No status changes were recorded while this ticket was open — its history only
+                covers time after it was already{" "}
+                <b className="font-semibold text-foreground">{segments.at(-1)?.label.toLowerCase()}</b>, so there's no
+                record of where the{" "}
+                <b className="font-semibold text-foreground">{fmtDiff(openMinutes)}</b>{" "}
+                before that went.
               </>
             ) : (
               "No status transitions have been recorded for this ticket yet, so a status-by-status breakdown isn't available."
@@ -627,7 +644,7 @@ const AIAnalysisPanel = ({ ticket, conversations, segments, onCitationClick, onD
 // ticket's own created/resolved stamps). AI explains this timeline; it never
 // gates access to it. ──────────────────────────────────────────────────────
 
-interface TimelineEvent { date: string; label: string; duration: string | null; hex: string }
+interface TimelineEvent { date: string; label: string; duration: string | null; hex: string; approx?: boolean }
 
 const TicketTimeline = ({ ticket, segments, onViewFullHistory }: {
   ticket: Ticket; segments: AIAnalysisSegment[]; onViewFullHistory: () => void;
@@ -642,6 +659,7 @@ const TicketTimeline = ({ ticket, segments, onViewFullHistory }: {
       label: s.label,
       duration: fmtDiff(s.minutes),
       hex: STATUS_HEX[s.status] ?? OTHER_HEX,
+      approx: s.confidence !== "exact",
     })),
     {
       date: segments.at(-1)?.endsAt ?? (isDone ? ticket.updated_at : new Date().toISOString()),
@@ -673,14 +691,28 @@ const TicketTimeline = ({ ticket, segments, onViewFullHistory }: {
                 </span>
                 <span className="h-2.5 w-2.5 rounded-full ring-4 ring-card" style={{ background: e.hex }} />
                 <span className="text-[11px] font-semibold leading-tight text-foreground">{e.label}</span>
-                <span className="text-[10.5px] leading-none" style={{ color: e.duration ? e.hex : undefined }}>
-                  {e.duration ?? <span className="text-muted-foreground/40">–</span>}
+                <span
+                  className={cn("text-[10.5px] leading-none", e.approx && "decoration-dotted underline underline-offset-2 opacity-70")}
+                  style={{ color: e.duration ? e.hex : undefined }}
+                  title={e.approx ? "Estimated — this span predates status tracking, so its start time is inferred, not recorded" : undefined}
+                >
+                  {e.duration ? `${e.approx ? "~" : ""}${e.duration}` : <span className="text-muted-foreground/40">–</span>}
                 </span>
               </div>
             ))}
           </div>
         </div>
       </div>
+
+      {/* Every recorded span is an estimate — i.e. the ticket predates status
+          tracking and its history was backfilled. Say so, so a synthetic
+          "Closed since day one" row isn't read as a real transition. */}
+      {segments.length > 0 && segments.every((s) => s.confidence !== "exact") && (
+        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/60">
+          This ticket predates status tracking — its history was backfilled from the status it
+          held when tracking began, so these spans are estimates rather than recorded changes.
+        </p>
+      )}
     </div>
   );
 };
