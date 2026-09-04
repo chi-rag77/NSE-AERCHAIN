@@ -17,7 +17,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { fetchAutoAnalysis, triggerAnalysis, AutoAnalysisRow } from "@/services/ticketAnalysis";
+import { statusLabel } from "@/lib/tickets";
+import { fetchAutoAnalysis, triggerAnalysis, AutoAnalysisRow, MatchedTicket } from "@/services/ticketAnalysis";
 
 const sanitizeNote = (html: string) =>
   DOMPurify.sanitize(html, { FORBID_TAGS: ["style"], FORBID_ATTR: ["style"] });
@@ -51,6 +52,55 @@ function markdownToHtml(md: string): string {
   return out.join("\n");
 }
 
+// The dashboard renders matched tickets as a table (below), not the bullet
+// list baked into note_html for the Freshdesk note — strip that one section
+// out of the displayed HTML so the same tickets aren't shown twice. The
+// edge function's markdownToHtml always emits this heading as exactly
+// `<p><strong>Matched tickets</strong></p>` immediately followed by the `<ul>`
+// of bullets; if a row predates matched_tickets (no structured data to build
+// a table from), this deliberately does nothing, so the bullets still show.
+function stripMatchedTicketsSection(html: string, haveTable: boolean): string {
+  if (!haveTable) return html;
+  return html.replace(/<p><strong>Matched tickets<\/strong><\/p>\s*<ul>[\s\S]*?<\/ul>/, "");
+}
+
+const fmtDuration = (mins: number) => {
+  const m = Math.max(0, Math.round(mins));
+  const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), min = m % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${min}m`;
+  return `${min}m`;
+};
+
+const MatchedTicketsTable = ({ matches }: { matches: MatchedTicket[] }) => (
+  <div className="overflow-x-auto rounded-xl border border-border/50">
+    <table className="w-full text-[12px]">
+      <thead>
+        <tr className="border-b border-border/50 bg-secondary/30 text-left text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">
+          <th className="px-3 py-2">Ticket</th>
+          <th className="px-3 py-2">Match</th>
+          <th className="px-3 py-2">Resolved in</th>
+          <th className="px-3 py-2">Assignee</th>
+        </tr>
+      </thead>
+      <tbody>
+        {matches.map((m, i) => (
+          <tr key={m.ticket_id} className={cn(i > 0 && "border-t border-border/40")}>
+            <td className="max-w-[280px] px-3 py-2">
+              <span className="font-semibold text-foreground">#{m.ticket_id}</span>{" "}
+              <span className="text-muted-foreground">— {m.subject}</span>
+              <span className="ml-1.5 text-[10.5px] text-muted-foreground/70">({statusLabel(m.status)})</span>
+            </td>
+            <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{Math.round(m.similarity * 100)}%</td>
+            <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{fmtDuration(m.resolve_minutes)}</td>
+            <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{m.responder_name ?? "Unassigned"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
 const CONFIDENCE_TONE: Record<string, string> = {
   high: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
   medium: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
@@ -69,6 +119,7 @@ export const AnalysisOverlay = ({ ticketId, open, onOpenChange }: Props) => {
   const [status, setStatus] = useState<Status>("loading");
   const [row, setRow] = useState<AutoAnalysisRow | null>(null);
   const [noteHtml, setNoteHtml] = useState<string>("");
+  const [matchedTickets, setMatchedTickets] = useState<MatchedTicket[]>([]);
   const [freshNoteId, setFreshNoteId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,6 +129,7 @@ export const AnalysisOverlay = ({ ticketId, open, onOpenChange }: Props) => {
     const r = await fetchAutoAnalysis(ticketId);
     setRow(r);
     if (r?.note_body) setNoteHtml(markdownToHtml(r.note_body));
+    setMatchedTickets(r?.matched_tickets ?? []);
     setStatus(r ? r.status : "none");
     return r;
   };
@@ -88,6 +140,7 @@ export const AnalysisOverlay = ({ ticketId, open, onOpenChange }: Props) => {
     if (open && ticketId) {
       setRow(null);
       setNoteHtml("");
+      setMatchedTickets([]);
       setFreshNoteId(null);
       setError(null);
       refresh();
@@ -107,6 +160,7 @@ export const AnalysisOverlay = ({ ticketId, open, onOpenChange }: Props) => {
     }
     if (res.posted && res.note_html) {
       setNoteHtml(res.note_html);
+      setMatchedTickets(res.matched_tickets ?? []);
       setFreshNoteId(res.freshdesk_note_id ?? null);
     }
     // The ledger row is the source of truth either way — re-read it rather
@@ -218,8 +272,15 @@ export const AnalysisOverlay = ({ ticketId, open, onOpenChange }: Props) => {
 
               <div
                 className="fd-html rounded-xl border border-border/50 bg-secondary/20 px-4 py-3 text-[13px] leading-relaxed text-foreground/90 [&_hr]:my-2.5 [&_hr]:border-border/60 [&_ol]:ml-4 [&_ol]:list-decimal [&_ol]:space-y-1 [&_p]:mb-2 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_strong]:text-foreground [&_ul]:ml-4 [&_ul]:list-disc [&_ul]:space-y-1"
-                dangerouslySetInnerHTML={{ __html: sanitizeNote(noteHtml) }}
+                dangerouslySetInnerHTML={{ __html: sanitizeNote(stripMatchedTicketsSection(noteHtml, matchedTickets.length > 0)) }}
               />
+
+              {matchedTickets.length > 0 && (
+                <div>
+                  <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Matched tickets</div>
+                  <MatchedTicketsTable matches={matchedTickets} />
+                </div>
+              )}
             </div>
           )}
         </div>

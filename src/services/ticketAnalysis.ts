@@ -21,6 +21,19 @@ import { supabase } from "./supabase";
 export type AnalysisConfidence = "high" | "medium" | "low";
 export type AutoAnalysisStatus = "in_progress" | "posted" | "skipped" | "failed";
 
+/** One matched ticket, as data rather than the markdown prose it's also
+ *  rendered as inside note_body/note_html — this is what the dashboard's
+ *  "Matched tickets" table is built from. */
+export interface MatchedTicket {
+  ticket_id: number;
+  subject: string;
+  /** 0–1 cosine similarity. */
+  similarity: number;
+  status: number;
+  resolve_minutes: number;
+  responder_name: string | null;
+}
+
 /** A row from ticket_auto_analysis — the one ledger both the webhook and the
  *  manual trigger write to, so "what's on this ticket" always means the
  *  same thing regardless of which one produced it. */
@@ -33,6 +46,7 @@ export interface AutoAnalysisRow {
   median_resolve_minutes: number | null;
   recommended_assignee_name: string | null;
   confidence: AnalysisConfidence | null;
+  matched_tickets: MatchedTicket[];
   note_body: string | null;
   freshdesk_note_id: number | null;
   error: string | null;
@@ -50,6 +64,7 @@ export interface TriggerResult {
   mean_similarity?: number;
   median_resolve_minutes?: number | null;
   recommended_assignee?: string | null;
+  matched_tickets?: MatchedTicket[];
   note_markdown?: string;
   note_html?: string;
   freshdesk_note_id?: number;
