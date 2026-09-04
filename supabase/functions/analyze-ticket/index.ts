@@ -224,7 +224,14 @@ async function callGemini(apiKey: string, model: string, prompt: string) {
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
-        temperature: 0.3, maxOutputTokens: 700, responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA,
+        // 700 was sized for the original 4-field schema; fafeb81 later grew the
+        // prompt to demand full S#/M#-cited narratives over the whole thread and
+        // pushed real responses past that cap. Thinking tokens are also billed
+        // against this same budget, so the actual text allowance was even
+        // smaller than 700. 2000 gives headroom without costing anything on a
+        // response that finishes normally — output tokens are only billed when
+        // generated.
+        temperature: 0.3, maxOutputTokens: 2000, responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA,
         // LOW thinking: this task is "narrate pre-computed facts," not reasoning-heavy —
         // full thinking budget burns hundreds of extra tokens for no quality gain here.
         thinkingConfig: { thinkingLevel: "LOW" },
@@ -233,8 +240,16 @@ async function callGemini(apiKey: string, model: string, prompt: string) {
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const candidate = data?.candidates?.[0];
+  const text = candidate?.content?.parts?.[0]?.text;
   if (!text) throw new Error("Gemini returned no content");
+  // A response cut off mid-string fails JSON.parse with an opaque native
+  // error ("Unterminated string in JSON at position N") that gives no hint
+  // it was truncation. Check finishReason first so that case is diagnosable
+  // at a glance instead of looking like a malformed-response bug.
+  if (candidate?.finishReason === "MAX_TOKENS") {
+    throw new Error(`Gemini response truncated at maxOutputTokens (finishReason: MAX_TOKENS)`);
+  }
   return JSON.parse(text);
 }
 

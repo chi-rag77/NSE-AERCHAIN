@@ -6,6 +6,10 @@ backed by Freshdesk data synced into Supabase.
 - **Dashboard** — service health score, KPI strip, priority queue, live activity, SLA analytics
 - **Tickets** — full ticket register with filters, SLA tracking, and a detail drawer
 - **Reports** — styled Excel (2-sheet) ticket export + SLA compliance reports in Excel & PDF
+- **Ticket auto-analysis** — on a ticket's first customer reply, Freshdesk webhooks
+  an Edge Function that finds similar *resolved* tickets by semantic search and posts
+  an internal note with root causes, resolution steps, median resolve time, and a
+  recommended assignee ([details](supabase/README.md#ticket-auto-analysis))
 
 Stack: Vite · React 19 · TypeScript · Tailwind · shadcn/ui · Recharts · Supabase (Postgres + Edge Functions) · ExcelJS · jsPDF
 
@@ -49,6 +53,9 @@ Set them only as Supabase Edge Function secrets:
 supabase secrets set SUPABASE_SECRET_KEY=<service-role-key>
 supabase secrets set FRESHDESK_API_KEY=<freshdesk-api-key>
 supabase secrets set FRESHDESK_DOMAIN=<your-domain>.freshdesk.com
+supabase secrets set GEMINI_API_KEY=<gemini-api-key>
+# Ticket auto-analysis: authenticates the inbound Freshdesk webhook
+supabase secrets set AUTO_ANALYZE_WEBHOOK_SECRET="$(openssl rand -hex 24)"
 ```
 
 `.env` is gitignored — keep it that way.
@@ -76,14 +83,19 @@ The `VITE_SUPABASE_ANON_KEY` is public by design and does **not** need rotation
 ## Architecture
 
 ```
-Freshdesk REST API
-      │
-      ▼
-sync-freshdesk (Supabase Edge Function, Deno)   ← FRESHDESK_API_KEY, SUPABASE_SECRET_KEY
-      │  upserts tickets + conversations
-      ▼
-Supabase Postgres (RLS: anon read-only)
-      │
+Freshdesk REST API                        Freshdesk webhook (first customer reply)
+      │                                              │
+      ▼                                              ▼
+sync-freshdesk (Edge Function, Deno)      auto-analyze-ticket (Edge Function, Deno)
+      │  upserts tickets + conversations   │  pgvector search over resolved tickets
+      │                                    │  → posts an internal note back to Freshdesk
+      ▼                                    ▼
+Supabase Postgres (RLS: anon read-only) ◀──┘
+      │        ← FRESHDESK_API_KEY, GEMINI_API_KEY, SUPABASE_SECRET_KEY
       ▼
 Frontend (Vite/React)   ← VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 ```
+
+`analyze-ticket` (on-demand "SLA Autopsy", triggered from the ticket drawer) and
+`auto-analyze-ticket` (proactive, webhook-triggered) both read from Postgres and
+call Gemini; neither invents a number — see `supabase/README.md`.
