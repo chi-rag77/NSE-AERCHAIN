@@ -159,6 +159,24 @@ function parseWebhook(body: any): ParsedWebhook {
   };
 }
 
+// Freshdesk's rate limit is shared across EVERYTHING hitting this account —
+// sync-freshdesk's cron, other Edge Functions, a person manually clicking
+// "Retry" — so a 429 here is routine, not exceptional, and used to surface
+// straight to the user as "Analysis failed" for something that would have
+// succeeded seconds later on its own. Retry it in place instead: honor
+// Freshdesk's own `Retry-After` when it sends one, otherwise back off
+// 2s/4s. Capped at 2 retries (3 attempts total, ≤~8s added) — enough to ride
+// out a shared burst without turning a real outage into a long hang.
+async function fetchWithRetry(url: string, init: RequestInit, maxRetries = 2): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, init);
+    if (res.status !== 429 || attempt >= maxRetries) return res;
+    const retryAfter = Number(res.headers.get("Retry-After"));
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : (attempt + 1) * 2000;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(waitMs, 8000)));
+  }
+}
+
 // ─── Freshdesk API (same auth/pagination shape as sync-freshdesk) ───────────
 class Freshdesk {
   private headers: Record<string, string>;
@@ -171,7 +189,7 @@ class Freshdesk {
   }
 
   async ticket(id: number) {
-    const res = await fetch(`${this.base}/tickets/${id}?include=requester,company,stats`, { headers: this.headers });
+    const res = await fetchWithRetry(`${this.base}/tickets/${id}?include=requester,company,stats`, { headers: this.headers });
     if (!res.ok) throw new Error(`Freshdesk ticket ${id}: ${res.status} ${await res.text()}`);
     return await res.json();
   }
@@ -180,7 +198,7 @@ class Freshdesk {
   async conversations(id: number, maxPages = 5) {
     const out: any[] = [];
     for (let page = 1; page <= maxPages; page++) {
-      const res = await fetch(`${this.base}/tickets/${id}/conversations?per_page=100&page=${page}`, { headers: this.headers });
+      const res = await fetchWithRetry(`${this.base}/tickets/${id}/conversations?per_page=100&page=${page}`, { headers: this.headers });
       if (!res.ok) throw new Error(`Freshdesk conversations ${id}: ${res.status} ${await res.text()}`);
       const batch = await res.json();
       if (!Array.isArray(batch) || batch.length === 0) break;
@@ -903,6 +921,18 @@ Deno.serve(async (req) => {
       };
     });
 
+    // Structured form of the same matches — the dashboard renders these as a
+    // table (data), while noteMarkdown below renders them as bullets (prose,
+    // for the Freshdesk note). Same underlying tickets, two presentations.
+    const matchedTickets = similar.map((s) => ({
+      ticket_id: s.ticket_id,
+      subject: s.subject,
+      similarity: round2(s.similarity),
+      status: s.status,
+      resolve_minutes: s.resolve_minutes,
+      responder_name: s.responder_name,
+    }));
+
     // ── 7. Numbers — computed here, never asked of the model ───────────────
     const resolveMinutes = similar.map((s) => s.resolve_minutes).filter((m) => m > 0);
     const medianMinutes = median(resolveMinutes);
@@ -951,6 +981,7 @@ Deno.serve(async (req) => {
         similar_count: similar.length, confidence, mean_similarity: round2(meanSimilarity),
         median_resolve_minutes: medianMinutes === null ? null : Math.round(medianMinutes),
         recommended_assignee: assignee?.name ?? null,
+        matched_tickets: matchedTickets,
         note_markdown: noteMarkdown,
         note_html: noteHtml,
         generated_at: generatedAt,
@@ -971,6 +1002,7 @@ Deno.serve(async (req) => {
       confidence,
       root_causes: Array.isArray(ai.root_causes) ? ai.root_causes : [],
       resolution_steps: Array.isArray(ai.resolution_steps) ? ai.resolution_steps : [],
+      matched_tickets: matchedTickets,
       note_body: noteMarkdown,
       freshdesk_note_id: noteId,
       model: GEMINI_MODEL,
@@ -982,6 +1014,7 @@ Deno.serve(async (req) => {
       similar_count: similar.length, confidence, mean_similarity: round2(meanSimilarity),
       median_resolve_minutes: medianMinutes === null ? null : Math.round(medianMinutes),
       recommended_assignee: assignee?.name ?? null,
+      matched_tickets: matchedTickets,
       note_markdown: noteMarkdown, note_html: markdownToHtml(noteMarkdown),
       embeddings_backfilled: backfilled, elapsed_ms: Date.now() - startedAt,
     });
