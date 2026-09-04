@@ -206,6 +206,25 @@ feature like this gets switched off.
    conversation thread to read yet at creation time, so nothing else is
    needed on the trigger side.
 
+## Manual trigger from the dashboard
+
+Signed-in agents can also fire this from the ticket drawer — "Analyze Similar
+Cases" — for a ticket the webhook missed (predates the feature, or its run
+failed). It calls the exact same Edge Function, the exact same way, just with
+`{"ticket_id": ...}` and no Freshdesk webhook envelope — there is no separate
+preview-then-confirm flow; the same one-shot `ticket_auto_analysis` claim that
+protects the webhook also means a second click on an already-`posted` ticket
+is a safe no-op, not a duplicate note. The button reads that same table, so it
+naturally shows nothing further to do once a ticket already has a result —
+whichever of the two produced it.
+
+**Hidden entirely in guest/public mode** — `TicketDrawer` only renders the
+button (and mounts the overlay) when a real session exists. This is the same
+client-side gate the SLA Autopsy panel's "Refresh" already uses elsewhere in
+this app, not a server-enforced check in the function itself — consistent
+with this being an internal tool where sensitive actions are gated by hiding
+UI rather than by an auth check inside every Edge Function.
+
 ## Verifying it
 
 ```bash

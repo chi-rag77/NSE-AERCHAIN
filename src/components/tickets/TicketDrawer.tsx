@@ -452,12 +452,16 @@ const AIAnalysisPanel = ({ ticket, conversations, segments, onCitationClick, onD
           <Sparkles className="h-3 w-3 text-[#6B4EFF]" /> AI Analysis
         </span>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setSimilarCasesOpen(true)}
-            className="inline-flex items-center gap-1 rounded-full border border-[#6B4EFF]/30 bg-[#6B4EFF]/5 px-2 py-0.5 text-[10.5px] font-semibold text-[#6B4EFF] transition-colors hover:bg-[#6B4EFF]/10 dark:text-violet-300"
-          >
-            <Sparkles className="h-3 w-3" /> Analyze Similar Cases
-          </button>
+          {/* Posts directly to Freshdesk on click (see AnalysisOverlay) — signed-in
+              agents only, never shown to a guest/public-mode visitor. */}
+          {canRegenerate && (
+            <button
+              onClick={() => setSimilarCasesOpen(true)}
+              className="inline-flex items-center gap-1 rounded-full border border-[#6B4EFF]/30 bg-[#6B4EFF]/5 px-2 py-0.5 text-[10.5px] font-semibold text-[#6B4EFF] transition-colors hover:bg-[#6B4EFF]/10 dark:text-violet-300"
+            >
+              <Sparkles className="h-3 w-3" /> Analyze Similar Cases
+            </button>
+          )}
           {status === "loaded" && data && (
             <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", CONFIDENCE_META[data.confidence].tone)}>
               <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
@@ -466,7 +470,9 @@ const AIAnalysisPanel = ({ ticket, conversations, segments, onCitationClick, onD
           )}
         </div>
       </div>
-      <AnalysisOverlay ticketId={ticket.id} open={similarCasesOpen} onOpenChange={setSimilarCasesOpen} />
+      {canRegenerate && (
+        <AnalysisOverlay ticketId={ticket.id} open={similarCasesOpen} onOpenChange={setSimilarCasesOpen} />
+      )}
 
       <div className="space-y-3 p-3.5">
         {data?.warning && (

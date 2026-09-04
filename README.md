@@ -9,9 +9,9 @@ backed by Freshdesk data synced into Supabase.
 - **Ticket auto-analysis** — the moment a new ticket is created, Freshdesk webhooks
   an Edge Function that finds similar *resolved* tickets by semantic search and posts
   an internal note with root causes, resolution steps, median resolve time, and a
-  recommended assignee ([details](supabase/README.md#ticket-auto-analysis)). Also
-  available on demand from the ticket drawer ("Analyze Similar Cases"), with results
-  cached per ticket and a review step before anything posts to Freshdesk.
+  recommended assignee ([details](supabase/README.md#ticket-auto-analysis)). Signed-in
+  agents can also trigger it on demand from the ticket drawer ("Analyze Similar
+  Cases") — same pipeline, posts straight to Freshdesk; not shown in guest/public mode.
 
 Stack: Vite · React 19 · TypeScript · Tailwind · shadcn/ui · Recharts · Supabase (Postgres + Edge Functions) · ExcelJS · jsPDF
 

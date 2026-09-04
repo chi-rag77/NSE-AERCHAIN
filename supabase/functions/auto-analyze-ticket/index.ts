@@ -982,6 +982,7 @@ Deno.serve(async (req) => {
       similar_count: similar.length, confidence, mean_similarity: round2(meanSimilarity),
       median_resolve_minutes: medianMinutes === null ? null : Math.round(medianMinutes),
       recommended_assignee: assignee?.name ?? null,
+      note_markdown: noteMarkdown, note_html: markdownToHtml(noteMarkdown),
       embeddings_backfilled: backfilled, elapsed_ms: Date.now() - startedAt,
     });
   } catch (err) {
