@@ -6,10 +6,12 @@ backed by Freshdesk data synced into Supabase.
 - **Dashboard** — service health score, KPI strip, priority queue, live activity, SLA analytics
 - **Tickets** — full ticket register with filters, SLA tracking, and a detail drawer
 - **Reports** — styled Excel (2-sheet) ticket export + SLA compliance reports in Excel & PDF
-- **Ticket auto-analysis** — on a ticket's first customer reply, Freshdesk webhooks
+- **Ticket auto-analysis** — the moment a new ticket is created, Freshdesk webhooks
   an Edge Function that finds similar *resolved* tickets by semantic search and posts
   an internal note with root causes, resolution steps, median resolve time, and a
-  recommended assignee ([details](supabase/README.md#ticket-auto-analysis))
+  recommended assignee ([details](supabase/README.md#ticket-auto-analysis)). Also
+  available on demand from the ticket drawer ("Analyze Similar Cases"), with results
+  cached per ticket and a review step before anything posts to Freshdesk.
 
 Stack: Vite · React 19 · TypeScript · Tailwind · shadcn/ui · Recharts · Supabase (Postgres + Edge Functions) · ExcelJS · jsPDF
 
@@ -83,7 +85,7 @@ The `VITE_SUPABASE_ANON_KEY` is public by design and does **not** need rotation
 ## Architecture
 
 ```
-Freshdesk REST API                        Freshdesk webhook (first customer reply)
+Freshdesk REST API                        Freshdesk webhook (ticket created)
       │                                              │
       ▼                                              ▼
 sync-freshdesk (Edge Function, Deno)      auto-analyze-ticket (Edge Function, Deno)

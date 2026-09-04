@@ -60,14 +60,15 @@ mode** with bundled mock data, so local dev still works.
 
 # Ticket auto-analysis
 
-When a ticket gets its **first customer reply**, Freshdesk fires a webhook at
-the `auto-analyze-ticket` Edge Function. The function finds the most
-semantically similar tickets that have **already been resolved**, and posts a
-**private internal note** on the new ticket: what these usually turn out to be,
-what worked last time, how long it took, and who to hand it to.
+The moment a **new ticket is created**, Freshdesk fires a webhook at the
+`auto-analyze-ticket` Edge Function. The function finds the most semantically
+similar tickets that have **already been resolved**, and posts a **private
+internal note** on the new ticket: what these usually turn out to be, what
+worked last time, how long it took, and who to hand it to — before an agent
+has even opened it.
 
 ```
-Freshdesk (first customer reply)
+Freshdesk (ticket created)
       │  webhook
       ▼
 auto-analyze-ticket ──▶ PK claim in ticket_auto_analysis   (dedup, before any spend)
@@ -184,12 +185,11 @@ feature like this gets switched off.
    not rely on webhook traffic to keep it current.
 
 5. **Wire the Freshdesk automation** — Admin → Workflows → Automations →
-   **Ticket is updated**:
+   **Ticket Creation**:
 
-   - **When**: *Reply is sent by* → *Requester* (the first-reply check is
-     enforced in the function, so a broader trigger is safe — it just costs a
-     couple of free API calls to say "not the first reply")
-   - **Conditions**: Status *is* Open
+   - **When**: *Ticket is created* (no further conditions needed — every new
+     ticket qualifies; the function's own `DONE_STATUSES` check is a no-op
+     safety net for a stale/replayed webhook, not a real gate at creation time)
    - **Action**: *Trigger webhook* → `POST`, JSON,
      URL `https://<PROJECT_REF>.supabase.co/functions/v1/auto-analyze-ticket`
    - **Custom header**: `X-Auto-Analyze-Secret: <secret>`
@@ -201,7 +201,10 @@ feature like this gets switched off.
 
    A flat `{"ticket_id": "{{ticket.id}}"}` works too — the parser accepts
    nested or flat, and `ticket_id` / `ticketId` / `id`, and a status as either
-   a code or a label.
+   a code or a label. The query text is the ticket's own subject +
+   description (the customer's original problem statement) — there is no
+   conversation thread to read yet at creation time, so nothing else is
+   needed on the trigger side.
 
 ## Verifying it
 

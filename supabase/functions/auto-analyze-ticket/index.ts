@@ -2,11 +2,15 @@
 // auto-analyze-ticket — Supabase Edge Function (Deno)
 //
 // The proactive counterpart to analyze-ticket. Freshdesk fires a webhook the
-// moment a ticket gets its FIRST customer reply; this function finds the most
-// semantically similar tickets that were ALREADY RESOLVED, and posts a private
-// internal note on the new ticket saying how those were solved, how long they
-// took, and who solved them — so the agent starts from prior art instead of
-// from scratch.
+// moment a NEW TICKET IS CREATED; this function finds the most semantically
+// similar tickets that were ALREADY RESOLVED, and posts a private internal
+// note on the new ticket saying how those were solved, how long they took,
+// and who solved them — so the agent starts from prior art instead of from
+// scratch, before they've even opened it.
+//
+// The ticket's own subject + description (the customer's original problem
+// statement) is the query text — there is no conversation thread to read yet
+// at creation time, so this fires as early as it possibly can.
 //
 // Design principle (inherited from analyze-ticket): the model never invents a
 // number. Similarity, time-to-resolve, the median, and the recommended
@@ -422,7 +426,7 @@ interface MatchContext {
 }
 
 function buildPrompt(
-  ticket: any, firstReply: string, matches: MatchContext[],
+  ticket: any, matches: MatchContext[],
   medianMinutes: number | null, assignee: ReturnType<typeof recommendAssignee>, confidence: string,
 ) {
   const lines: string[] = [];
@@ -437,7 +441,6 @@ function buildPrompt(
   lines.push(`NEW TICKET #${ticket.id} — "${clean(ticket.subject)}"`);
   lines.push(`  Type: ${clean(ticket.ticket_type) || "Unclassified"} · Module: ${clean(ticket.module) || "Unspecified"} · Issue type: ${clean(ticket.sub_type) || "Unspecified"} · Priority code: ${ticket.priority} · Status: ${statusLabel(ticket.status)}`);
   lines.push(`  Description: "${snippet(ticket.description, 1500)}"`);
-  if (firstReply) lines.push(`  First customer reply (the event that triggered this): "${snippet(firstReply, 1000)}"`);
   lines.push(``);
   lines.push(`${matches.length} SIMILAR RESOLVED TICKETS (ranked by cosine similarity on Gemini embeddings — all already Resolved or Closed):`);
   matches.forEach((m, i) => {
@@ -763,38 +766,23 @@ Deno.serve(async (req) => {
 
   let claimed = false;
   try {
-    // ── 2. Is this really the first customer reply? ────────────────────────
-    // Read the thread from Freshdesk rather than our mirror: the sync runs on a
-    // 5-minute cron, and the webhook fires in seconds, so our copy of the
-    // conversation almost certainly does not have the triggering reply yet.
+    // ── 2. Fetch the ticket as Freshdesk has it right now ──────────────────
+    // Read from Freshdesk rather than our mirror: the sync runs on a 5-minute
+    // cron, and the webhook fires in seconds, so our copy may not have this
+    // ticket at all yet.
     const ticket = await fd.ticket(ticketId);
     const status = Number(ticket?.status ?? statusHint ?? 2);
 
-    // dry_run is a user clicking "Analyze Similar Cases" on whatever ticket
-    // they happen to be looking at in the dashboard — not a webhook timed to
-    // the first reply. The auto path's "only the first reply, only while
-    // open" gates exist to keep the AUTOMATIC note rare and cheap; a manual,
-    // user-initiated look shouldn't be blocked by either.
+    // Guards against a stale/replayed "Ticket Created" webhook arriving after
+    // the ticket was already resolved by the time this runs — not expected
+    // for a real creation event, but cheap to check. dry_run (a person
+    // manually reviewing a ticket in the dashboard, possibly a closed one)
+    // deliberately skips this.
     if (!dryRun && DONE_STATUSES.includes(status)) {
       return json({ ok: true, skipped: true, ticket_id: ticketId, reason: `Ticket is already ${statusLabel(status)}` });
     }
 
-    const conversations = await fd.conversations(ticketId);
-    const customerReplies = conversations
-      .filter((c: any) => c?.incoming === true && c?.private !== true)
-      .sort((a: any, b: any) => Date.parse(a.created_at) - Date.parse(b.created_at));
-
-    if (!dryRun && customerReplies.length === 0) {
-      return json({ ok: true, skipped: true, ticket_id: ticketId, reason: "No customer reply on the thread yet" });
-    }
-    // Strictly the FIRST reply. A later reply on an untouched ticket is a
-    // different (and much noisier) product decision; the PK would stop the
-    // second note anyway, but skipping here means we never pay for it.
-    if (!dryRun && customerReplies.length > 1) {
-      return json({ ok: true, skipped: true, ticket_id: ticketId, reason: `Not the first customer reply (${customerReplies.length} on thread)` });
-    }
-    const firstReply = customerReplies[0];
-    const triggerConversationId = Number(firstReply?.id ?? conversationIdHint ?? 0) || null;
+    const triggerConversationId = conversationIdHint;
 
     // The ledger has an FK to tickets. If the syncer hasn't seen this ticket
     // yet, seed the row from what Freshdesk just gave us — DO NOTHING on
@@ -927,7 +915,6 @@ Deno.serve(async (req) => {
     // ── 8. Synthesis ───────────────────────────────────────────────────────
     const prompt = buildPrompt(
       { ...probe, priority: ticket.priority ?? 1, status },
-      snippet(firstReply?.body_text ?? firstReply?.body, 1000),
       matches, medianMinutes, assignee, confidence,
     );
     const ai = await callGemini(GEMINI_API_KEY, GEMINI_MODEL, prompt);
